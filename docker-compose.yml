@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - /var/snap/lxd/common/lxd:/var/snap/lxd/common/lxd
+    depends_on:
+      - redis
+      - db
+    environment:
+      - DATABASE_URL=postgresql://mizzle:password@db/mizzle
+      - REDIS_URL=redis://redis:6379/0
+      - LXD_SOCKET=/var/snap/lxd/common/lxd/unix.socket
+
+  monitor:
+    build: .
+    command: python -m app.core.monitor
+    volumes:
+      - /var/snap/lxd/common/lxd:/var/snap/lxd/common/lxd
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - MONITORING_INTERVAL=15
+
+  decision:
+    build: .
+    command: python -m app.core.decision
+    depends_on:
+      - redis
+      - db
+    environment:
+      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql://mizzle:password@db/mizzle
+
+  worker:
+    build: .
+    command: celery -A celery_worker worker --loglevel=info
+    depends_on:
+      - redis
+      - db
+    environment:
+      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql://mizzle:password@db/mizzle
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=mizzle
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=mizzle
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
