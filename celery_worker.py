@@ -1,10 +1,8 @@
-from app.core.decision import app as decision_app
-from app.core.scaling import app as scaling_app
-from celery import Celery
+from app.core.scaling import app as celery_app
 from config import Config
 
-app = Celery('mizzle_worker')
-app.config_from_object(Config)
+# This makes the Celery app available for the worker
+app = celery_app
 
 if __name__ == '__main__':
     app.start()

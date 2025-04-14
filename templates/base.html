@@ -11,7 +11,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="#">Mizzle Autoscaler</a>
+            <a class="navbar-brand" href="{{ url_for('index') }}">Mizzle Autoscaler</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -21,10 +21,10 @@
                         <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('containers.list_containers') }}">Containers</a>
+                        <a class="nav-link" href="{{ url_for('list_containers') }}">Containers</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('rules.list_rules') }}">Scaling Rules</a>
+                        <a class="nav-link" href="{{ url_for('list_rules') }}">Scaling Rules</a>
                     </li>
                 </ul>
             </div>

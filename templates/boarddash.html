@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Mizzle Autoscaler{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Container Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>CPU</th>
+                                <th>Memory</th>
+                            </tr>
+                        </thead>
+                        <tbody id="containers-status">
+                            <!-- Filled by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Recent Scaling Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Container</th>
+                                <th>Action</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scaling-actions">
+                            <!-- Filled by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Resource Usage</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="usage-chart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load container status
+    fetch('/api/containers')
+        .then(response => response.json())
+        .then(data => {
+            const tableBody = document.getElementById('containers-status');
+            tableBody.innerHTML = data.map(container => `
+                <tr>
+                    <td>${container.name}</td>
+                    <td><span class="badge bg-${container.status === 'Running' ? 'success' : 'danger'}">${container.status}</span></td>
+                    <td><div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: ${Math.random() * 100}%"></div>
+                    </div></td>
+                    <td><div class="progress">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: ${Math.random() * 100}%"></div>
+                    </div></td>
+                </tr>
+            `).join('');
+        });
+
+    // Load scaling actions
+    fetch('/api/scaling-history?limit=5')
+        .then(response => response.json())
+        .then(data => {
+            const tableBody = document.getElementById('scaling-actions');
+            tableBody.innerHTML = data.map(action => `
+                <tr>
+                    <td>${action.container_name}</td>
+                    <td><span class="badge bg-${action.action === 'scale_up' ? 'info' : 'warning'}">${action.action}</span></td>
+                    <td>${new Date(action.timestamp).toLocaleString()}</td>
+                </tr>
+            `).join('');
+        });
+
+    // Initialize chart
+    const ctx = document.getElementById('usage-chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+            datasets: [{
+                label: 'CPU Usage %',
+                data: Array.from({length: 24}, () => Math.floor(Math.random() * 100)),
+                borderColor: 'rgb(75, 192, 192)',
+                tension: 0.1
+            }, {
+                label: 'Memory Usage %',
+                data: Array.from({length: 24}, () => Math.floor(Math.random() * 100)),
+                borderColor: 'rgb(54, 162, 235)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

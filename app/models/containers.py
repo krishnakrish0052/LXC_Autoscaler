@@ -1,9 +1,7 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
+from .base import Base  # Import from shared base
 import json
-
-Base = declarative_base()
 
 class Container(Base):
     __tablename__ = 'containers'
