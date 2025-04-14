@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Scaling Rules - Mizzle Autoscaler{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5>Scaling Rules</h5>
+        <a href="{{ url_for('create_rule') }}" class="btn btn-primary">Add New Rule</a>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Container</th>
+                        <th>Metric</th>
+                        <th>Threshold</th>
+                        <th>Action</th>
+                        <th>Increment</th>
+                        <th>Cooldown</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in rules %}
+                    <tr>
+                        <td>{{ rule.container_name }}</td>
+                        <td>{{ rule.metric }}</td>
+                        <td>{{ rule.threshold }}%</td>
+                        <td>{{ rule.action_type }}</td>
+                        <td>
+                            {% if rule.action_type == 'horizontal' %}
+                                {{ rule.increment }} containers
+                            {% else %}
+                                CPU: {{ rule.cpu_increment }}, Memory: {{ rule.memory_increment }}
+                            {% endif %}
+                        </td>
+                        <td>{{ rule.cooldown }} seconds</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

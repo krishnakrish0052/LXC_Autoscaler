@@ -1,7 +1,7 @@
-# Core package initialization
+# app/core/__init__.py
+# Import classes directly without causing circular imports
 from .monitor import LXCMonitor
-from .decision import DecisionEngine, ScalingDecision
+from .decision import DecisionEngine
 from .scaling import LXCManager
-from .predictive import PredictiveScaler
 
-__all__ = ['LXCMonitor', 'DecisionEngine', 'ScalingDecision', 'LXCManager', 'PredictiveScaler']
+__all__ = ['LXCMonitor', 'DecisionEngine', 'LXCManager']

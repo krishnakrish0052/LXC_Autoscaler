@@ -1,0 +1,75 @@
+k{% extends "base.html" %}
+
+{% block title %}Containers - Mizzle Autoscaler{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5>Container List</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                        <th>CPU</th>
+                        <th>Memory</th>
+                    </tr>
+                </thead>
+                <tbody id="containers-table">
+                    <!-- Will be filled by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // First load container list
+    fetch('/api/containers')
+        .then(response => response.json())
+        .then(containers => {
+            const tableBody = document.getElementById('containers-table');
+            
+            // Then fetch metrics for each container
+            containers.forEach(container => {
+                fetch(`/api/containers/${container.name}/metrics`)
+                    .then(response => response.json())
+                    .then(metrics => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${container.name}</td>
+                            <td><span class="badge bg-${container.status === 'Running' ? 'success' : 'danger'}">
+                                ${container.status}
+                            </span></td>
+                            <td>${new Date(container.created_at).toLocaleString()}</td>
+                            <td>
+                                <div class="progress">
+                                    <div class="progress-bar" role="progressbar" 
+                                         style="width: ${metrics.cpu || 0}%">
+                                        ${metrics.cpu || 0}%
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="progress">
+                                    <div class="progress-bar bg-success" role="progressbar" 
+                                         style="width: ${metrics.memory || 0}%">
+                                        ${metrics.memory || 0}%
+                                    </div>
+                                </div>
+                            </td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+            });
+        });
+});
+</script>
+{% endblock %}

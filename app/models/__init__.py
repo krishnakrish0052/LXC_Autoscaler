@@ -1,5 +1,5 @@
-# Models package initialization
-from .containers import Container, ScalingHistory
-from .scaling import ScalingRule
+from .base import Base
+from .containers import Container
+from .scaling import ScalingRule  # Keep this import here
 
-__all__ = ['Container', 'ScalingHistory', 'ScalingRule']
+__all__ = ['Base', 'Container', 'ScalingRule']  # Remove 'ScalingHistory' here
