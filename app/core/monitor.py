@@ -115,8 +115,16 @@ class LXCMonitor:
 
             # Collect CPU metrics
             if isinstance(state.cpu, dict):
-                cpu_usage = state.cpu.get('usage', 0) / (state.cpu.get('usage', 0) + 0.1) * 100
-                metrics['cpu'] = cpu_usage
+                # Fix CPU calculation to provide realistic values (0-100%)
+                cpu_usage = min(
+                    state.cpu.get('usage', 0) / 
+                    max(state.cpu.get('usage', 0) + state.cpu.get('system', 0) + 1, 1) * 100,
+                    100
+                )
+                metrics['cpu'] = round(cpu_usage, 2)  # Round to 2 decimal places
+            else:
+                metrics['cpu'] = 0.0
+
 
             # Collect memory metrics
             if isinstance(state.memory, dict):

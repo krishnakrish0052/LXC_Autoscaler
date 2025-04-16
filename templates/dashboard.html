@@ -32,16 +32,18 @@
                                 <td>
                                     <div class="progress">
                                         <div class="progress-bar" role="progressbar" 
-                                             style="width: {{ container.cpu_usage|default(0) }}%">
-                                            {{ container.cpu_usage|default(0) }}%
+                                             style="width: {{ container.metrics.cpu|default(0) }}%">
+                                            {{ container.metrics.cpu|default(0)|round(1) }}%
                                         </div>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="progress">
                                         <div class="progress-bar bg-success" role="progressbar" 
-                                             style="width: {{ container.memory_usage|default(0) }}%">
-                                            {{ container.memory_usage|default(0) }}%
+                                             style="width: {{ (container.metrics.memory_limit|default(0) > 0) and 
+                                                             (container.metrics.memory|default(0) / container.metrics.memory_limit * 100)|round(1) or 0 }}%">
+                                            {{ (container.metrics.memory_limit|default(0) > 0) and 
+                                               (container.metrics.memory|default(0) / container.metrics.memory_limit * 100)|round(1) or 0 }}%
                                         </div>
                                     </div>
                                 </td>

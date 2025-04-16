@@ -10,6 +10,7 @@ from app.models.containers import Container
 from app.models.scaling import ScalingRule, ScalingHistory
 from app.utils.helpers import get_db_session
 from config import Config
+from app.models.loadbalancer import LoadBalancer, LoadBalancerTarget
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -40,11 +41,42 @@ def index():
 @app.route('/dashboard')
 def dashboard():
     session = get_db_session()
+    redis_client = redis.StrictRedis(
+        host=Config.REDIS_HOST,
+        port=Config.REDIS_PORT,
+        db=0,
+        decode_responses=True
+    )
+    
+    # Get containers with metrics
     containers = session.query(Container).all()
+    containers_with_metrics = []
+    
+    for container in containers:
+        # Get latest metrics from Redis
+        metrics_key = f"container:{container.name}:metrics"
+        metrics_data = redis_client.get(metrics_key)
+        
+        container_data = {
+            'id': container.id,
+            'name': container.name,
+            'status': container.status,
+            'created_at': container.created_at,
+            'updated_at': container.updated_at,
+            'metrics': json.loads(metrics_data) if metrics_data else {}
+        }
+        containers_with_metrics.append(container_data)
+    
+    # Get recent scaling history
+    history = session.query(ScalingHistory).order_by(
+        ScalingHistory.timestamp.desc()
+    ).limit(10).all()
+    
+    # Get all scaling rules
     rules = session.query(ScalingRule).all()
-    history = session.query(ScalingHistory).order_by(ScalingHistory.timestamp.desc()).limit(5).all()
+    
     return render_template('dashboard.html',
-                         containers=containers,
+                         containers=containers_with_metrics,
                          rules=rules,
                          history=history)
 
@@ -65,6 +97,54 @@ def create_rule():
     session = get_db_session()
     containers = session.query(Container).all()
     return render_template('rules/create.html', containers=containers)
+
+@app.route('/rules/<int:rule_id>/edit')
+def edit_rule(rule_id):
+    session = get_db_session()
+    rule = session.query(ScalingRule).filter(ScalingRule.id == rule_id).first()
+    
+    if not rule:
+        flash('Scaling rule not found', 'danger')
+        return redirect(url_for('list_rules'))
+    
+    containers = session.query(Container).all()
+    return render_template('rules/edit.html', rule=rule, containers=containers)
+
+
+@app.route('/load-balancers')
+def list_load_balancers():
+    session = get_db_session()
+    load_balancers = session.query(LoadBalancer).all()
+    return render_template('load_balancers/list.html', load_balancers=load_balancers)
+
+@app.route('/load-balancers/create')
+def create_load_balancer():
+    return render_template('load_balancers/create.html')
+
+@app.route('/load-balancers/<int:lb_id>')
+def load_balancer_detail(lb_id):
+    session = get_db_session()
+    load_balancer = session.query(LoadBalancer).filter(LoadBalancer.id == lb_id).first()
+    
+    if not load_balancer:
+        flash('Load balancer not found', 'danger')
+        return redirect(url_for('list_load_balancers'))
+    
+    containers = session.query(Container).filter(Container.status == 'Running').all()
+    return render_template('load_balancers/detail.html', 
+                         load_balancer=load_balancer, 
+                         containers=containers)
+
+@app.route('/load-balancers/<int:lb_id>/edit')
+def load_balancer_edit(lb_id):
+    session = get_db_session()
+    load_balancer = session.query(LoadBalancer).filter(LoadBalancer.id == lb_id).first()
+    
+    if not load_balancer:
+        flash('Load balancer not found', 'danger')
+        return redirect(url_for('list_load_balancers'))
+    
+    return render_template('load_balancers/create.html', load_balancer=load_balancer)
 
 def start_monitor():
     try:
