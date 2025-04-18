@@ -324,19 +324,20 @@ class MetricsService:
             except Exception as db_error:
                 logger.warning(f"Error getting instances from database, falling back to LXD: {str(db_error)}")
                 # If database fails, fall back to using LXD client
-                instances = self.client.instances.all()
-                
-                for instance in instances:
-                    # Make sure we have a proper instance object with a name attribute
-                    if hasattr(instance, 'name'):
-                        metrics = self.get_instance_metrics(instance.name)
-                        all_metrics.append(metrics)
-                    elif isinstance(instance, str):
-                        # If instance is a string (container name), use it directly
-                        metrics = self.get_instance_metrics(instance)
-                        all_metrics.append(metrics)
-                    else:
-                        logger.warning(f"Skipping instance without name attribute: {instance}")
+                try:
+                    # Get all containers directly instead of instances
+                    containers = self.client.containers.all()
+                    
+                    for container in containers:
+                        try:
+                            # Use container name directly
+                            container_name = container.name
+                            metrics = self.get_instance_metrics(container_name)
+                            all_metrics.append(metrics)
+                        except Exception as container_err:
+                            logger.warning(f"Error processing container: {str(container_err)}")
+                except Exception as lxd_err:
+                    logger.warning(f"Error getting containers from LXD: {str(lxd_err)}")
             
             return all_metrics
             

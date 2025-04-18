@@ -77,8 +77,9 @@
                     <label>Memory Usage: {{ metrics.memory|default(0)|format_bytes }} {% if metrics.memory_limit and metrics.memory_limit > 0 %}of {{ metrics.memory_limit|format_bytes }}{% endif %}</label>
                     <div class="progress">
                         <div class="progress-bar bg-success" role="progressbar" 
-                             style="width: {{ (metrics.memory_limit and metrics.memory_limit > 0 and metrics.memory) and 
-                                             min(100, (metrics.memory / metrics.memory_limit * 100)|round(1)) or 0 }}%"></div>
+                             style="width: {{ metrics.memory_percent|default(0) }}%">
+                             {{ metrics.memory_percent|default(0)|round(1) }}%
+                        </div>
                     </div>
                 </div>
                 

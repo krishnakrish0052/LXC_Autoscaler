@@ -46,10 +46,8 @@
                             <div class="progress" data-bs-toggle="tooltip" 
                                  title="{% if container.metrics and container.metrics.memory %}{{ (container.metrics.memory / 1024 / 1024)|round(0) }} MB{% else %}0 MB{% endif %} / {% if container.metrics and container.metrics.memory_limit %}{{ (container.metrics.memory_limit / 1024 / 1024)|round(0) }} MB{% else %}N/A{% endif %}">
                                 <div class="progress-bar bg-success" role="progressbar" 
-                                     style="width: {{ (container.metrics and container.metrics.memory_limit and container.metrics.memory_limit > 0 and container.metrics.memory) and 
-                                                     min(100, (container.metrics.memory / container.metrics.memory_limit * 100)|round(1)) or 0 }}%">
-                                    {{ (container.metrics and container.metrics.memory_limit and container.metrics.memory_limit > 0 and container.metrics.memory) and 
-                                        min(100, (container.metrics.memory / container.metrics.memory_limit * 100)|round(1)) or 0 }}%
+                                     style="width: {{ container.metrics.memory_percent|default(0) if container.metrics else 0 }}%">
+                                    {{ container.metrics.memory_percent|default(0)|round(1) if container.metrics else 0 }}%
                                 </div>
                             </div>
                         </td>
