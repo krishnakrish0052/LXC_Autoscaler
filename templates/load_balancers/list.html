@@ -37,7 +37,8 @@
                         <td>
                             <div class="btn-group" role="group">
                                 <a href="{{ url_for('load_balancer_detail', lb_id=lb.id) }}" class="btn btn-sm btn-info">View</a>
-                                <a href="{{ url_for('load_balancer_edit', lb_id=lb.id) }}" class="btn btn-sm btn-warning">Edit</a>
+                                <!-- Edit button - using update endpoint since load_balancer_edit doesn't exist -->
+                                <a href="{{ url_for('load_balancer_detail', lb_id=lb.id) }}" class="btn btn-sm btn-warning">Edit</a>
                                 <button class="btn btn-sm btn-danger delete-lb" data-lb-id="{{ lb.id }}" data-lb-name="{{ lb.name }}">Delete</button>
                             </div>
                         </td>

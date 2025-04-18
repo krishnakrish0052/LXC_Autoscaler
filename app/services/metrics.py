@@ -24,8 +24,8 @@ class MetricsService:
     def get_system_metrics(self):
         """Get comprehensive system metrics"""
         try:
-            # Get instances from database, not from LXD client which could return strings
-            instances = self.session.query(Instance).all()
+            # We're not using instances in this method, so we don't need to query them
+            # This avoids potential 'str' object has no attribute 'name' errors
             
             # CPU metrics
             cpu_percent = psutil.cpu_percent(interval=0.1)
