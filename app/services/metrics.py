@@ -24,6 +24,9 @@ class MetricsService:
     def get_system_metrics(self):
         """Get comprehensive system metrics"""
         try:
+            # Get instances from database, not from LXD client which could return strings
+            instances = self.session.query(Instance).all()
+            
             # CPU metrics
             cpu_percent = psutil.cpu_percent(interval=0.1)
             cpu_times = psutil.cpu_times_percent(interval=0.1)
@@ -310,20 +313,31 @@ class MetricsService:
         """Get metrics for all instances"""
         try:
             all_metrics = []
-            instances = self.client.instances.all()
             
-            for instance in instances:
-                # Make sure we have a proper instance object with a name attribute
-                if hasattr(instance, 'name'):
-                    metrics = self.get_instance_metrics(instance.name)
-                    all_metrics.append(metrics)
-                elif isinstance(instance, str):
-                    # If instance is a string (container name), use it directly
-                    metrics = self.get_instance_metrics(instance)
-                    all_metrics.append(metrics)
-                else:
-                    logger.warning(f"Skipping instance without name attribute: {instance}")
+            # First try to get instances from the database
+            try:
+                db_instances = self.session.query(Instance).all()
+                for instance in db_instances:
+                    if hasattr(instance, 'name'):
+                        metrics = self.get_instance_metrics(instance.name)
+                        all_metrics.append(metrics)
+            except Exception as db_error:
+                logger.warning(f"Error getting instances from database, falling back to LXD: {str(db_error)}")
+                # If database fails, fall back to using LXD client
+                instances = self.client.instances.all()
                 
+                for instance in instances:
+                    # Make sure we have a proper instance object with a name attribute
+                    if hasattr(instance, 'name'):
+                        metrics = self.get_instance_metrics(instance.name)
+                        all_metrics.append(metrics)
+                    elif isinstance(instance, str):
+                        # If instance is a string (container name), use it directly
+                        metrics = self.get_instance_metrics(instance)
+                        all_metrics.append(metrics)
+                    else:
+                        logger.warning(f"Skipping instance without name attribute: {instance}")
+            
             return all_metrics
             
         except Exception as e:

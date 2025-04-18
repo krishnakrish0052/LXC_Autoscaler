@@ -50,7 +50,7 @@
                     <dd class="col-sm-8">{{ metrics.cpu_limit|default('Unlimited') }}</dd>
                     
                     <dt class="col-sm-4">Memory Limit:</dt>
-                    <dd class="col-sm-8">{{ (metrics.memory_limit / 1024 / 1024)|round(0)|default(0) }} MB</dd>
+                    <dd class="col-sm-8">{% if metrics.memory_limit %}{{ (metrics.memory_limit / 1024 / 1024)|round(0) }} MB{% else %}Unlimited{% endif %}</dd>
                     
                     <dt class="col-sm-4">Storage Limit:</dt>
                     <dd class="col-sm-8">{{ metrics.storage_limit|default('Unlimited') }}</dd>
@@ -74,10 +74,10 @@
                 </div>
                 
                 <div class="mb-3">
-                    <label>Memory Usage: {{ metrics.memory|default(0)|format_bytes }} of {{ metrics.memory_limit|default(0)|format_bytes }}</label>
+                    <label>Memory Usage: {{ metrics.memory|default(0)|format_bytes }} {% if metrics.memory_limit and metrics.memory_limit > 0 %}of {{ metrics.memory_limit|format_bytes }}{% endif %}</label>
                     <div class="progress">
                         <div class="progress-bar bg-success" role="progressbar" 
-                             style="width: {{ (metrics.memory_limit and metrics.memory_limit > 0) and 
+                             style="width: {{ (metrics.memory_limit and metrics.memory_limit > 0 and metrics.memory) and 
                                              min(100, (metrics.memory / metrics.memory_limit * 100)|round(1)) or 0 }}%"></div>
                     </div>
                 </div>

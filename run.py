@@ -245,43 +245,51 @@ def list_instances():
 @app.route("/instances/<name>")
 def instance_detail(name):
     """Detailed view of a specific instance with metrics"""
-    session = get_db_session()
-    instance = session.query(Instance).filter(Instance.name == name).first()
-    
-    if not instance:
-        return render_template('404.html'), 404
-    
-    # Get metrics service
-    metrics_service = MetricsService()
-    
-    # Get current metrics
-    current_metrics = metrics_service.get_instance_metrics(name)
-    
-    # Get historical metrics for charts
-    cpu_history = metrics_service.get_historical_metrics(name, 'cpu', hours=24)
-    memory_history = metrics_service.get_historical_metrics(name, 'memory', hours=24)
-    network_history = metrics_service.get_historical_metrics(name, 'network', hours=24)
-    disk_history = metrics_service.get_historical_metrics(name, 'disk', hours=24)
-    
-    # Get scaling rules for this instance
-    rules = session.query(ScalingRule).filter(
-        ScalingRule.container_name == name
-    ).all()
-    
-    # Get scaling history for this instance
-    history = session.query(ScalingHistory).filter(
-        ScalingHistory.instance_name == name
-    ).order_by(ScalingHistory.timestamp.desc()).limit(10).all()
-    
-    return render_template('instances/detail.html',
-                          instance=instance,
-                          metrics=current_metrics,
-                          cpu_history=cpu_history,
-                          memory_history=memory_history,
-                          network_history=network_history,
-                          disk_history=disk_history,
-                          rules=rules,
-                          history=history)
+    try:
+        session = get_db_session()
+        instance = session.query(Instance).filter(Instance.name == name).first()
+        
+        if not instance:
+            return render_template('404.html'), 404
+        
+        # Get metrics service
+        metrics_service = MetricsService()
+        
+        # Get current metrics
+        current_metrics = metrics_service.get_instance_metrics(name)
+        
+        # Get historical metrics for charts
+        cpu_history = metrics_service.get_historical_metrics(name, 'cpu', hours=24)
+        memory_history = metrics_service.get_historical_metrics(name, 'memory', hours=24)
+        network_history = metrics_service.get_historical_metrics(name, 'network', hours=24)
+        disk_history = metrics_service.get_historical_metrics(name, 'disk', hours=24)
+        
+        # Get scaling rules for this instance
+        rules = session.query(ScalingRule).filter(
+            ScalingRule.container_name == name
+        ).all()
+        
+        # Get scaling history for this instance
+        history = session.query(ScalingHistory).filter(
+            ScalingHistory.instance_name == name
+        ).order_by(ScalingHistory.timestamp.desc()).limit(10).all()
+        
+        return render_template('instances/detail.html',
+                            instance=instance,
+                            metrics=current_metrics,
+                            cpu_history=cpu_history,
+                            memory_history=memory_history,
+                            network_history=network_history,
+                            disk_history=disk_history,
+                            rules=rules,
+                            history=history)
+    except Exception as e:
+        logger.error(f"Error getting instance details: {str(e)}")
+        return render_template('fallback_dashboard.html',
+                            system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                            redis_ok=True,
+                            containers=[],
+                            error_message=f"Error: {str(e)}")
 
 @app.route('/rules')
 def list_rules():
@@ -332,6 +340,7 @@ def list_containers():
     """List all containers - with fallback for database errors"""
     try:
         session = get_db_session()
+        redis_client = get_redis_connection()
         containers = session.query(Container).all()
         
         # Check if we got real data or fallback
@@ -352,7 +361,37 @@ def list_containers():
                                 containers=lxd_containers,
                                 error_message="Database error - containers table may not exist")
         
-        return render_template('containers/list.html', containers=containers)
+        # Add metrics to each container
+        containers_with_metrics = []
+        for container in containers:
+            # Create a container dictionary with metrics attribute
+            container_data = {
+                'id': container.id,
+                'name': container.name,
+                'status': container.status if hasattr(container, 'status') else 'Unknown',
+                'created_at': container.created_at,
+                'updated_at': container.updated_at if hasattr(container, 'updated_at') else container.created_at,
+                'metrics': {}  # Default empty metrics
+            }
+            
+            # Try to get metrics from Redis
+            try:
+                metrics_key = f"container:{container.name}:metrics"
+                metrics_data = redis_client.get(metrics_key)
+                if metrics_data:
+                    container_data['metrics'] = json.loads(metrics_data)
+                else:
+                    # Try instance metrics as fallback (container might also be an instance)
+                    instance_metrics_key = f"instance:{container.name}:metrics"
+                    instance_metrics_data = redis_client.get(instance_metrics_key)
+                    if instance_metrics_data:
+                        container_data['metrics'] = json.loads(instance_metrics_data)
+            except Exception as redis_err:
+                logger.warning(f"Failed to get metrics for container {container.name} from Redis: {str(redis_err)}")
+            
+            containers_with_metrics.append(container_data)
+        
+        return render_template('containers/list.html', containers=containers_with_metrics)
     except Exception as e:
         logger.error(f"Error listing containers: {str(e)}")
         return render_template('fallback_dashboard.html',
@@ -392,6 +431,12 @@ def container_details(name):
                 metrics_data = redis_client.get(metrics_key)
                 if metrics_data:
                     container['metrics'] = json.loads(metrics_data)
+                else:
+                    # Try instance metrics as fallback
+                    instance_metrics_key = f"instance:{name}:metrics"
+                    instance_metrics_data = redis_client.get(instance_metrics_key)
+                    if instance_metrics_data:
+                        container['metrics'] = json.loads(instance_metrics_data)
                 
                 # Return a simplified detail view
                 return render_template('fallback_dashboard.html',
@@ -403,9 +448,28 @@ def container_details(name):
                 logger.warning(f"Failed to get container from LXD: {str(lxd_err)}")
                 return render_template('404.html'), 404
         
+        # Convert container to dictionary with metrics
+        container_data = {
+            'id': container.id,
+            'name': container.name,
+            'status': container.status if hasattr(container, 'status') else 'Unknown',
+            'created_at': container.created_at,
+            'updated_at': container.updated_at if hasattr(container, 'updated_at') else container.created_at,
+            'metrics': {}  # Default empty metrics
+        }
+        
         # Get container metrics from Redis
         metrics_key = f"container:{name}:metrics"
         metrics_data = redis_client.get(metrics_key)
+        
+        if metrics_data:
+            container_data['metrics'] = json.loads(metrics_data)
+        else:
+            # Try instance metrics as fallback
+            instance_metrics_key = f"instance:{name}:metrics"
+            instance_metrics_data = redis_client.get(instance_metrics_key)
+            if instance_metrics_data:
+                container_data['metrics'] = json.loads(instance_metrics_data)
         
         # Get scaling history for this container
         history = session.query(ScalingHistory).filter(
@@ -418,8 +482,8 @@ def container_details(name):
         ).all()
         
         return render_template('containers/detail.html',
-                            container=container,
-                            metrics=json.loads(metrics_data) if metrics_data else {},
+                            container=container_data,
+                            metrics=container_data['metrics'],
                             scaling_history=history,
                             rules=rules)
     except Exception as e:
