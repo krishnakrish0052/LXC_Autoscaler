@@ -12,6 +12,7 @@ from config import Config
 from app.models.loadbalancer import LoadBalancer, LoadBalancerTarget
 import socket
 
+logger = logging.getLogger(__name__)
 bp = Blueprint('api', __name__)
 
 @bp.route('/containers')

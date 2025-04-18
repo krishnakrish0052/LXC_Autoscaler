@@ -4,12 +4,14 @@ import logging
 import redis
 import json
 import sys
+from datetime import datetime
 from flask import Flask, render_template
 from flasgger import Swagger
 from app.api.routes import bp as api_bp
 from app.api.metrics_routes import metrics_bp  # Import the metrics blueprint
 from app.models.instances import Instance
 from app.models.scaling import ScalingRule, ScalingHistory
+from app.models.containers import Container
 from app.utils.helpers import get_db_session, get_redis_connection, check_db_setup
 from config import Config
 from app.models.loadbalancer import LoadBalancer, LoadBalancerTarget
@@ -24,6 +26,42 @@ logger = logging.getLogger("scaler")
 # Initialize Flask app
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Custom Jinja filters for formatting
+@app.template_filter('format_bytes')
+def format_bytes(num, precision=2):
+    """Format bytes to human readable string"""
+    if num is None:
+        return "0 B"
+    
+    num = float(num)
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
+        if abs(num) < 1024.0 or unit == 'PB':
+            return f"{num:.{precision}f} {unit}"
+        num /= 1024.0
+
+@app.template_filter('format_uptime')
+def format_uptime(seconds):
+    """Format seconds to days, hours, minutes, seconds"""
+    if seconds is None:
+        return "0s"
+    
+    seconds = int(float(seconds))
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    
+    result = []
+    if days > 0:
+        result.append(f"{days}d")
+    if hours > 0:
+        result.append(f"{hours}h")
+    if minutes > 0:
+        result.append(f"{minutes}m")
+    if seconds > 0 or not result:
+        result.append(f"{seconds}s")
+    
+    return " ".join(result)
 
 # Setup Swagger
 swagger = Swagger(app, template={
@@ -42,7 +80,8 @@ app.register_blueprint(metrics_bp)  # Register metrics blueprint
 
 @app.route('/')
 def index():
-    return render_template('dashboard.html')
+    # Redirect to dashboard
+    return dashboard()
 
 def check_redis_connection():
     """Test Redis connection to ensure it's available"""
@@ -231,12 +270,7 @@ def instance_detail(name):
                           rules=rules,
                           history=history)
 
-@app.route('/rules')
-def list_rules():
-    """List all scaling rules"""
-    session = get_db_session()
-    rules = session.query(ScalingRule).all()
-    return render_template('rules/list.html', rules=rules)
+# The list_rules route has been moved and enhanced with fallback support
 
 @app.route('/rules/create')
 def create_rule():
@@ -257,12 +291,135 @@ def edit_rule(rule_id):
     instances = session.query(Instance).all()
     return render_template('rules/edit.html', rule=rule, instances=instances)
 
+@app.route('/containers')
+def list_containers():
+    """List all containers - with fallback for database errors"""
+    try:
+        session = get_db_session()
+        containers = session.query(Container).all()
+        
+        # Check if we got real data or fallback
+        if not containers or not hasattr(containers[0] if containers else None, 'name'):
+            # Try to get container list directly from LXD
+            lxd_containers = []
+            try:
+                import pylxd
+                client = pylxd.Client()
+                lxd_containers = [{'name': c.name, 'status': c.status} for c in client.containers.all()]
+            except Exception as lxd_err:
+                logger.warning(f"Failed to get containers from LXD: {str(lxd_err)}")
+                
+            # Fallback mode with any containers found directly from LXD
+            return render_template('fallback_dashboard.html',
+                                system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                                redis_ok=True,
+                                containers=lxd_containers,
+                                error_message="Database error - containers table may not exist")
+        
+        return render_template('containers/list.html', containers=containers)
+    except Exception as e:
+        logger.error(f"Error listing containers: {str(e)}")
+        return render_template('fallback_dashboard.html',
+                            system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                            redis_ok=True,
+                            containers=[],
+                            error_message=f"Error: {str(e)}")
+
+# Container details route
+@app.route('/containers/<name>')
+def container_details(name):
+    """Detail view for a specific container with metrics and actions"""
+    try:
+        session = get_db_session()
+        redis_client = get_redis_connection()
+        
+        # Get the container by name
+        container = session.query(Container).filter(Container.name == name).first()
+        
+        if not container:
+            # Try to get container directly from LXD
+            try:
+                import pylxd
+                client = pylxd.Client()
+                lxd_container = client.containers.get(name)
+                
+                # Create a basic container object with data from LXD
+                container = {
+                    'name': name,
+                    'status': lxd_container.status,
+                    'created_at': datetime.now(),  # We don't have the exact time
+                    'metrics': {}
+                }
+                
+                # Try to get metrics
+                metrics_key = f"container:{name}:metrics"
+                metrics_data = redis_client.get(metrics_key)
+                if metrics_data:
+                    container['metrics'] = json.loads(metrics_data)
+                
+                # Return a simplified detail view
+                return render_template('fallback_dashboard.html',
+                                    system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                                    redis_ok=True,
+                                    containers=[container],
+                                    error_message=f"Container {name} found in LXD but not in database")
+            except Exception as lxd_err:
+                logger.warning(f"Failed to get container from LXD: {str(lxd_err)}")
+                return render_template('404.html'), 404
+        
+        # Get container metrics from Redis
+        metrics_key = f"container:{name}:metrics"
+        metrics_data = redis_client.get(metrics_key)
+        
+        # Get scaling history for this container
+        history = session.query(ScalingHistory).filter(
+            ScalingHistory.container_name == name
+        ).order_by(ScalingHistory.timestamp.desc()).limit(10).all()
+        
+        # Get scaling rules for this container
+        rules = session.query(ScalingRule).filter(
+            ScalingRule.container_name == name
+        ).all()
+        
+        return render_template('containers/detail.html',
+                            container=container,
+                            metrics=json.loads(metrics_data) if metrics_data else {},
+                            scaling_history=history,
+                            rules=rules)
+    except Exception as e:
+        logger.error(f"Error getting container details: {str(e)}")
+        return render_template('fallback_dashboard.html',
+                            system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                            redis_ok=True,
+                            containers=[],
+                            error_message=f"Error: {str(e)}")
+
+# The list_rules route has been moved and enhanced with fallback support
+
 @app.route('/load-balancers')
 def list_load_balancers():
-    """List all load balancers"""
-    session = get_db_session()
-    load_balancers = session.query(LoadBalancer).all()
-    return render_template('load_balancers/list.html', load_balancers=load_balancers)
+    """List all load balancers - with fallback for database errors"""
+    try:
+        session = get_db_session()
+        load_balancers = session.query(LoadBalancer).all()
+        
+        # Check if we got real data or fallback
+        if not load_balancers and not isinstance(load_balancers, list):
+            # Fallback mode
+            return render_template('fallback_dashboard.html',
+                                system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                                redis_ok=True,
+                                containers=[],
+                                error_message="Database error - load_balancers table may not exist")
+        
+        return render_template('load_balancers/list.html', load_balancers=load_balancers)
+    except Exception as e:
+        logger.error(f"Error listing load balancers: {str(e)}")
+        return render_template('fallback_dashboard.html',
+                            system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                            redis_ok=True,
+                            containers=[],
+                            error_message=f"Error: {str(e)}")
 
 @app.route('/load-balancers/create')
 def create_load_balancer():
