@@ -15,4 +15,8 @@ def create_app():
     from app.api.routes import bp as api_bp
     app.register_blueprint(api_bp, url_prefix='/api')
     
+    # Also register the legacy routes blueprint (but disable the scaling-rules POST endpoint)
+    from app.api.lastroutes import bp as legacy_api_bp
+    app.register_blueprint(legacy_api_bp, url_prefix='/api/legacy')
+    
     return app

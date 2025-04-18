@@ -5,7 +5,7 @@ from app.utils.helpers import get_db_session
 from datetime import datetime
 import json
 
-bp = Blueprint('api', __name__)
+bp = Blueprint('legacy_api', __name__)
 
 @bp.route('/containers', methods=['GET'])
 def list_containers():
@@ -34,43 +34,11 @@ def get_container(name):
         'updated_at': container.updated_at.isoformat() if container.updated_at else None
     })
 
-@bp.route('/scaling-rules', methods=['GET', 'POST'])
+@bp.route('/scaling-rules', methods=['GET'])
 def scaling_rules():
     session = get_db_session()
     
-    if request.method == 'POST':
-        data = request.get_json()
-        
-        rule = ScalingRule(
-            container_name=data['container_name'],
-            metric=data['metric'],
-            threshold=float(data['threshold']),
-            action_type=data['action_type'],
-            cooldown=int(data['cooldown'])
-        )
-        
-        if data['action_type'] == 'horizontal':
-            rule.increment = int(data['increment'])
-        else:
-            if 'cpu_increment' in data:
-                rule.cpu_increment = data['cpu_increment']
-            if 'memory_increment' in data:
-                rule.memory_increment = data['memory_increment']
-                
-        session.add(rule)
-        session.commit()
-        
-        return jsonify({
-            'id': rule.id,
-            'container_name': rule.container_name,
-            'metric': rule.metric,
-            'threshold': rule.threshold,
-            'action_type': rule.action_type,
-            'increment': rule.increment,
-            'cpu_increment': rule.cpu_increment,
-            'memory_increment': rule.memory_increment,
-            'cooldown': rule.cooldown
-        }), 201
+    # POST method has been removed to prevent duplicate rule creation
     
     # GET request
     container_name = request.args.get('container')
