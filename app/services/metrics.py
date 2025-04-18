@@ -6,7 +6,7 @@ import redis
 import time
 from datetime import datetime, timedelta
 import pylxd
-from app.utils.helpers import get_db_session
+from app.utils.helpers import get_db_session, get_redis_connection
 from app.models.instances import Instance
 from config import Config
 
@@ -15,11 +15,9 @@ logger = logging.getLogger(__name__)
 class MetricsService:
     def __init__(self, redis_host=None, redis_port=None):
         self.client = pylxd.Client()
-        self.redis = redis.StrictRedis(
-            host=redis_host or Config.REDIS_HOST,
-            port=redis_port or Config.REDIS_PORT,
-            db=0,
-            decode_responses=True
+        self.redis = get_redis_connection(
+            host=redis_host, 
+            port=redis_port
         )
         self.session = get_db_session()
         
@@ -315,8 +313,16 @@ class MetricsService:
             instances = self.client.instances.all()
             
             for instance in instances:
-                metrics = self.get_instance_metrics(instance.name)
-                all_metrics.append(metrics)
+                # Make sure we have a proper instance object with a name attribute
+                if hasattr(instance, 'name'):
+                    metrics = self.get_instance_metrics(instance.name)
+                    all_metrics.append(metrics)
+                elif isinstance(instance, str):
+                    # If instance is a string (container name), use it directly
+                    metrics = self.get_instance_metrics(instance)
+                    all_metrics.append(metrics)
+                else:
+                    logger.warning(f"Skipping instance without name attribute: {instance}")
                 
             return all_metrics
             

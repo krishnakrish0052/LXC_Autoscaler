@@ -74,6 +74,19 @@ swagger = Swagger(app, template={
     "basePath": "/api",
 })
 
+# Register error handlers
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template('fallback_dashboard.html', 
+                          system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                          redis_ok=False,
+                          containers=[],
+                          error_message=f"Server Error: {str(e)}"), 500
+
 # Register API blueprints
 app.register_blueprint(api_bp, url_prefix='/api')
 app.register_blueprint(metrics_bp)  # Register metrics blueprint
@@ -270,7 +283,30 @@ def instance_detail(name):
                           rules=rules,
                           history=history)
 
-# The list_rules route has been moved and enhanced with fallback support
+@app.route('/rules')
+def list_rules():
+    """List all scaling rules - with fallback for database errors"""
+    try:
+        session = get_db_session()
+        rules = session.query(ScalingRule).all()
+        
+        # Check if we got real data or fallback
+        if not rules and not isinstance(rules, list):
+            # Fallback mode
+            return render_template('fallback_dashboard.html',
+                                system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                                redis_ok=True,
+                                containers=[],
+                                error_message="Database error - scaling_rules table may not exist")
+        
+        return render_template('rules/list.html', rules=rules)
+    except Exception as e:
+        logger.error(f"Error listing rules: {str(e)}")
+        return render_template('fallback_dashboard.html',
+                            system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                            redis_ok=True,
+                            containers=[],
+                            error_message=f"Error: {str(e)}")
 
 @app.route('/rules/create')
 def create_rule():
@@ -393,8 +429,6 @@ def container_details(name):
                             redis_ok=True,
                             containers=[],
                             error_message=f"Error: {str(e)}")
-
-# The list_rules route has been moved and enhanced with fallback support
 
 @app.route('/load-balancers')
 def list_load_balancers():
