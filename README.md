@@ -37,6 +37,43 @@ A comprehensive autoscaling solution for LXC containers and VMs with both horizo
    - API server: `python run.py`
    - Celery worker: `celery -A celery_worker worker --loglevel=info`
 
+### Troubleshooting
+
+#### Database Issues
+
+If you see "relation does not exist" errors:
+
+1. Make sure your database is properly configured in `.env`:
+   ```
+   DATABASE_URL=postgresql://username:password@localhost/dbname
+   ```
+
+2. Run the database setup utility:
+   ```
+   ./db_setup.py
+   ```
+   This will create missing tables and fix common database issues.
+
+3. Manually run migrations:
+   ```
+   alembic upgrade head
+   ```
+
+#### Redis Issues
+
+If you encounter Redis authentication errors:
+
+1. Run the Redis configuration utility:
+   ```
+   ./redis_config.py
+   ```
+   This will help you find the correct password for your Redis server.
+
+2. Configure Redis to not require authentication:
+   - Edit Redis config (usually at /etc/redis/redis.conf)
+   - Comment out or remove the requirepass line
+   - Restart Redis
+
 ## Configuration
 
 Copy `.env.example` to `.env` and modify the settings as needed.

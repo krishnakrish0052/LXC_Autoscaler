@@ -10,7 +10,7 @@ from app.api.routes import bp as api_bp
 from app.api.metrics_routes import metrics_bp  # Import the metrics blueprint
 from app.models.instances import Instance
 from app.models.scaling import ScalingRule, ScalingHistory
-from app.utils.helpers import get_db_session, get_redis_connection
+from app.utils.helpers import get_db_session, get_redis_connection, check_db_setup
 from config import Config
 from app.models.loadbalancer import LoadBalancer, LoadBalancerTarget
 from app.services.metrics import MetricsService  # Import the metrics service
@@ -63,48 +63,105 @@ def check_redis_connection():
 @app.route('/dashboard')
 def dashboard():
     """Dashboard with system and instance metrics"""
-    session = get_db_session()
-    redis_client = get_redis_connection()
-    
-    # Get metrics service
-    metrics_service = MetricsService()
-    
-    # Get system metrics
-    system_metrics = metrics_service.get_system_metrics()
-    
-    # Get instances with metrics
-    instances = session.query(Instance).all()
-    instances_with_metrics = []
-    
-    for instance in instances:
-        # Get latest metrics from Redis
-        metrics_key = f"instance:{instance.name}:metrics"
-        metrics_data = redis_client.get(metrics_key)
+    try:
+        session = get_db_session()
+        redis_client = get_redis_connection()
         
-        instance_data = {
-            'id': instance.id,
-            'name': instance.name,
-            'type': instance.type,
-            'status': instance.status,
-            'created_at': instance.created_at,
-            'updated_at': instance.updated_at,
-            'metrics': json.loads(metrics_data) if metrics_data else {}
+        # Get metrics service
+        metrics_service = MetricsService()
+        
+        # Get system metrics
+        system_metrics = metrics_service.get_system_metrics()
+        
+        # Get basic system metrics using psutil if metrics service fails
+        if not system_metrics:
+            import psutil
+            system_metrics = {
+                'cpu_percent': psutil.cpu_percent(),
+                'memory_percent': psutil.virtual_memory().percent,
+                'disk_percent': psutil.disk_usage('/').percent
+            }
+        
+        # Get instances with metrics
+        try:
+            # Try to query instances - this will use the fallback if DB is unavailable
+            instances = session.query(Instance).all()
+            
+            # Check if we got a real result (not from fallback)
+            if isinstance(instances, list) and len(instances) > 0 and hasattr(instances[0], 'name'):
+                instances_with_metrics = []
+                
+                for instance in instances:
+                    # Get latest metrics from Redis
+                    metrics_key = f"instance:{instance.name}:metrics"
+                    metrics_data = redis_client.get(metrics_key)
+                    
+                    instance_data = {
+                        'id': instance.id,
+                        'name': instance.name,
+                        'type': instance.type,
+                        'status': instance.status,
+                        'created_at': instance.created_at,
+                        'updated_at': instance.updated_at,
+                        'metrics': json.loads(metrics_data) if metrics_data else {}
+                    }
+                    instances_with_metrics.append(instance_data)
+                
+                # Get recent scaling history
+                history = session.query(ScalingHistory).order_by(
+                    ScalingHistory.timestamp.desc()
+                ).limit(10).all()
+                
+                # Get all scaling rules
+                rules = session.query(ScalingRule).all()
+                
+                return render_template('dashboard.html',
+                                    system=system_metrics,
+                                    instances=instances_with_metrics,
+                                    rules=rules,
+                                    history=history)
+            else:
+                # Fallback to basic dashboard if no instances returned
+                raise ValueError("No instances found in database - possible database issue")
+                
+        except Exception as db_error:
+            logger.warning(f"Database error in dashboard: {str(db_error)}")
+            
+            # Check if we can get container names from monitor
+            containers = []
+            try:
+                # Try to list containers directly with pylxd
+                import pylxd
+                client = pylxd.Client()
+                containers = [c.name for c in client.containers.all()]
+            except Exception as lxd_error:
+                logger.warning(f"Failed to get containers from LXD: {str(lxd_error)}")
+            
+            # Display fallback dashboard with error message
+            redis_ok = True if hasattr(redis_client, "ping") and redis_client.ping() else False
+            
+            return render_template('fallback_dashboard.html',
+                                system=system_metrics,
+                                redis_ok=redis_ok,
+                                containers=containers,
+                                error_message=str(db_error))
+    
+    except Exception as e:
+        logger.error(f"Critical error in dashboard: {str(e)}")
+        
+        # Emergency fallback - ultra simple
+        import psutil
+        system_metrics = {
+            'cpu_percent': psutil.cpu_percent(),
+            'memory_percent': psutil.virtual_memory().percent,
+            'disk_percent': psutil.disk_usage('/').percent
         }
-        instances_with_metrics.append(instance_data)
-    
-    # Get recent scaling history
-    history = session.query(ScalingHistory).order_by(
-        ScalingHistory.timestamp.desc()
-    ).limit(10).all()
-    
-    # Get all scaling rules
-    rules = session.query(ScalingRule).all()
-    
-    return render_template('dashboard.html',
-                         system=system_metrics,
-                         instances=instances_with_metrics,
-                         rules=rules,
-                         history=history)
+        
+        return render_template('fallback_dashboard.html',
+                            system=system_metrics,
+                            redis_ok=False,
+                            containers=[],
+                            error_message=f"Critical error: {str(e)}")
 
 @app.route('/instances')
 def list_instances():
@@ -270,10 +327,18 @@ if __name__ == '__main__':
     
     if not redis_ok:
         logger.warning("⚠️ Redis not available - some functionality will be limited")
-        # Optional: Uncomment the line below to exit if Redis is required
-        # exit(1)
     else:
         logger.info("Redis connection established successfully")
+    
+    # Check database setup and create tables if needed
+    logger.info("Checking database setup...")
+    db_ok, db_message = check_db_setup()
+    
+    if not db_ok:
+        logger.warning(f"⚠️ Database setup issue: {db_message}")
+        logger.warning("⚠️ Some functionality will be limited - using fallback mode")
+    else:
+        logger.info(f"✅ {db_message}")
 
     try:
         # Start background services

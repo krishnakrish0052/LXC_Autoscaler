@@ -10,16 +10,137 @@ def get_db_engine():
     return create_engine(Config.SQLALCHEMY_DATABASE_URI)
 
 def get_db_session():
-    engine = get_db_engine()
-    Session = sessionmaker(bind=engine)
-    return Session()
+    """
+    Get a database session, with fallback in case of errors.
+    Returns a SQLAlchemy session or a fallback session if database is unavailable.
+    """
+    try:
+        engine = get_db_engine()
+        Session = sessionmaker(bind=engine)
+        return Session()
+    except Exception as e:
+        logger.error(f"Error creating database session: {str(e)}")
+        return FallbackDBSession()
 
 def init_db():
     """Initialize the database with required tables"""
-    from app.models.containers import Base
+    from app.models.base import Base
     engine = get_db_engine()
     Base.metadata.create_all(engine)
     logger.info("Database tables created")
+    
+def check_db_setup():
+    """Check if database is set up properly and creates tables if needed"""
+    try:
+        # Import all models to ensure they're registered with Base
+        from app.models.base import Base
+        from app.models.containers import Container
+        from app.models.instances import Instance, ScalingHistory
+        from app.models.scaling import ScalingRule
+        from app.models.loadbalancer import LoadBalancer, LoadBalancerTarget
+        
+        # Connect to database
+        engine = get_db_engine()
+        
+        # Create session to test connection
+        session = get_db_session()
+        
+        # Try a simple query to check connection
+        try:
+            # Check if instances table exists
+            from sqlalchemy import inspect
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            
+            # List of essential tables that should exist
+            required_tables = [
+                'instances', 
+                'scaling_rules', 
+                'scaling_history',
+                'containers',
+                'load_balancers',
+                'load_balancer_targets'
+            ]
+            
+            missing_tables = [table for table in required_tables if table not in tables]
+            
+            if missing_tables:
+                logger.warning(f"Missing database tables: {', '.join(missing_tables)}")
+                logger.info("Creating missing database tables...")
+                # Create all tables
+                Base.metadata.create_all(engine)
+                return False, f"Database tables were missing and have been created: {', '.join(missing_tables)}"
+            
+            return True, "Database setup verified"
+            
+        except Exception as e:
+            logger.error(f"Database query test failed: {str(e)}")
+            
+            # Try to create tables
+            logger.info("Attempting to create database tables...")
+            Base.metadata.create_all(engine)
+            
+            return False, f"Database setup error: {str(e)}"
+            
+    except Exception as e:
+        logger.error(f"Database connection/setup error: {str(e)}")
+        return False, f"Database connection error: {str(e)}"
+
+# Fallback for database errors
+class FallbackDBSession:
+    """
+    A fallback session that handles database failures gracefully.
+    Used when the database is unavailable to prevent application crashes.
+    """
+    def query(self, *args, **kwargs):
+        return FallbackDBQuery()
+    
+    def __getattr__(self, name):
+        return self._noop
+    
+    def _noop(self, *args, **kwargs):
+        return None
+    
+    def close(self):
+        pass
+    
+    def commit(self):
+        pass
+    
+    def rollback(self):
+        pass
+
+class FallbackDBQuery:
+    """Fallback for database queries when the database is unavailable"""
+    def filter(self, *args, **kwargs):
+        return self
+    
+    def filter_by(self, *args, **kwargs):
+        return self
+    
+    def all(self):
+        return []
+    
+    def first(self):
+        return None
+    
+    def one(self):
+        return None
+    
+    def count(self):
+        return 0
+    
+    def order_by(self, *args, **kwargs):
+        return self
+    
+    def limit(self, *args, **kwargs):
+        return self
+    
+    def offset(self, *args, **kwargs):
+        return self
+    
+    def join(self, *args, **kwargs):
+        return self
 # Redis connection helper
 def get_redis_connection(host=None, port=None):
     """

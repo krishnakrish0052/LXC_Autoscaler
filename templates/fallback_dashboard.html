@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="alert alert-warning">
+        <h4 class="alert-heading">⚠️ Limited Functionality Mode</h4>
+        <p>The dashboard is currently running in limited functionality mode due to database connectivity issues.</p>
+        <hr>
+        <p class="mb-0">
+            <strong>Details:</strong> {{ error_message }}
+        </p>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="card-title mb-0">System Information</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Database</h6>
+                    <p>Status: <span class="badge bg-danger">Unavailable</span></p>
+                    <p>To fix database issues, run: <code>./db_setup.py</code></p>
+                </div>
+                <div class="col-md-6">
+                    <h6>Redis</h6>
+                    <p>Status: <span class="badge {% if redis_ok %}bg-success{% else %}bg-danger{% endif %}">{{ "Available" if redis_ok else "Unavailable" }}</span></p>
+                    {% if not redis_ok %}
+                    <p>To fix Redis issues, run: <code>./redis_config.py</code></p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Active Containers</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        Container information unavailable due to database connectivity issues.
+                    </div>
+                    <ul>
+                        {% for container in containers %}
+                        <li>{{ container }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">System Resources</h5>
+                </div>
+                <div class="card-body">
+                    <div class="progress mb-3">
+                        <div class="progress-bar" role="progressbar" style="width: {{ system.cpu_percent }}%;" aria-valuenow="{{ system.cpu_percent }}" aria-valuemin="0" aria-valuemax="100">CPU: {{ system.cpu_percent }}%</div>
+                    </div>
+                    <div class="progress mb-3">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ system.memory_percent }}%;" aria-valuenow="{{ system.memory_percent }}" aria-valuemin="0" aria-valuemax="100">Memory: {{ system.memory_percent }}%</div>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-info" role="progressbar" style="width: {{ system.disk_percent }}%;" aria-valuenow="{{ system.disk_percent }}" aria-valuemin="0" aria-valuemax="100">Disk: {{ system.disk_percent }}%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="card-title mb-0">Recovery Instructions</h5>
+        </div>
+        <div class="card-body">
+            <h6>Database Setup</h6>
+            <p>Run the database setup utility to create the necessary tables:</p>
+            <pre><code>./db_setup.py</code></pre>
+            
+            <h6>Redis Configuration</h6>
+            <p>If you're experiencing Redis connection issues, run the Redis configuration utility:</p>
+            <pre><code>./redis_config.py</code></pre>
+            
+            <h6>Manual Database Setup</h6>
+            <p>If the automated tools don't resolve the issue, try running the Alembic migrations manually:</p>
+            <pre><code>alembic upgrade head</code></pre>
+            
+            <h6>Database Connection String</h6>
+            <p>Check your .env file or config.py to ensure the DATABASE_URL is correct.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
