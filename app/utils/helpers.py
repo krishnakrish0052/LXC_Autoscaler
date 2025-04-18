@@ -20,12 +20,22 @@ def init_db():
     engine = get_db_engine()
     Base.metadata.create_all(engine)
     logger.info("Database tables created")
-# In helpers.py or where you define Redis connections:
-def get_redis_connection():
+# Redis connection helper
+def get_redis_connection(host=None, port=None):
+    """
+    Get a Redis connection with proper authentication handling.
+    Empty or None password will skip authentication.
+    """
+    import redis
+    
+    redis_host = host or Config.REDIS_HOST
+    redis_port = port or Config.REDIS_PORT
+    
+    # Only provide password parameter if it's not empty
     if Config.REDIS_PASSWORD:
         return redis.StrictRedis(
-            host=Config.REDIS_HOST,
-            port=Config.REDIS_PORT,
+            host=redis_host,
+            port=redis_port,
             password=Config.REDIS_PASSWORD,
             db=0,
             decode_responses=True
@@ -33,8 +43,8 @@ def get_redis_connection():
     else:
         # Connect without password
         return redis.StrictRedis(
-            host=Config.REDIS_HOST,
-            port=Config.REDIS_PORT,
+            host=redis_host,
+            port=redis_port,
             db=0,
             decode_responses=True
         )

@@ -5,7 +5,7 @@ import redis
 from datetime import datetime, timedelta
 from celery import Celery
 from app.models.scaling import ScalingRule
-from app.utils.helpers import get_db_session
+from app.utils.helpers import get_db_session, get_redis_connection
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,18 +38,8 @@ class ScalingDecision:
 
 class DecisionEngine:
     def __init__(self, redis_host='localhost', redis_port=6379):
-        # Configure Redis client with optional password
-        redis_params = {
-            'host': redis_host, 
-            'port': redis_port, 
-            'db': 0,
-            'decode_responses': True
-        }
-        # Only add password if it's not None
-        if Config.REDIS_PASSWORD:
-            redis_params['password'] = Config.REDIS_PASSWORD
-            
-        self.redis = redis.StrictRedis(**redis_params)
+        # Use the helper function to get Redis connection
+        self.redis = get_redis_connection(host=redis_host, port=redis_port)
         self.pubsub = self.redis.pubsub()
         self.pubsub.subscribe('metrics')
         self.session = get_db_session()

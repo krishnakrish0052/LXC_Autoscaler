@@ -3,13 +3,14 @@ import threading
 import logging
 import redis
 import json
+import sys
 from flask import Flask, render_template
 from flasgger import Swagger
 from app.api.routes import bp as api_bp
 from app.api.metrics_routes import metrics_bp  # Import the metrics blueprint
 from app.models.instances import Instance
 from app.models.scaling import ScalingRule, ScalingHistory
-from app.utils.helpers import get_db_session
+from app.utils.helpers import get_db_session, get_redis_connection
 from config import Config
 from app.models.loadbalancer import LoadBalancer, LoadBalancerTarget
 from app.services.metrics import MetricsService  # Import the metrics service
@@ -43,16 +44,36 @@ app.register_blueprint(metrics_bp)  # Register metrics blueprint
 def index():
     return render_template('dashboard.html')
 
+def check_redis_connection():
+    """Test Redis connection to ensure it's available and properly configured"""
+    try:
+        # Use our helper to get a properly configured Redis client
+        redis_client = get_redis_connection()
+        
+        # Try to ping Redis server
+        response = redis_client.ping()
+        if response:
+            logger.info("✅ Redis connection successful")
+            return True
+        else:
+            logger.error("❌ Redis ping failed")
+            return False
+    except redis.exceptions.AuthenticationError:
+        logger.error("❌ Redis authentication failed - please check REDIS_PASSWORD in .env")
+        logger.error("   To disable authentication, set REDIS_PASSWORD to an empty string")
+        return False
+    except redis.exceptions.ConnectionError:
+        logger.error(f"❌ Redis connection failed - is Redis running at {Config.REDIS_HOST}:{Config.REDIS_PORT}?")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Redis error: {str(e)}")
+        return False
+
 @app.route('/dashboard')
 def dashboard():
     """Dashboard with system and instance metrics"""
     session = get_db_session()
-    redis_client = redis.StrictRedis(
-        host=Config.REDIS_HOST,
-        port=Config.REDIS_PORT,
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_connection()
     
     # Get metrics service
     metrics_service = MetricsService()
@@ -121,7 +142,7 @@ def list_instances():
     
     return render_template('instances/list.html', instances=instances_with_metrics)
 
-@app.route('/instances/<name>')
+@app.route("/instances/<name>")
 def instance_detail(name):
     """Detailed view of a specific instance with metrics"""
     session = get_db_session()
@@ -251,6 +272,17 @@ if __name__ == '__main__':
     if not os.path.exists(os.path.join(template_dir, 'dashboard.html')):
         logger.error("dashboard.html not found in templates directory")
         exit(1)
+        
+    # Check Redis connection before starting services
+    logger.info("Checking Redis connection...")
+    redis_ok = check_redis_connection()
+    
+    if not redis_ok:
+        logger.warning("⚠️ Redis not available - some functionality will be limited")
+        # Optional: Uncomment the line below to exit if Redis is required
+        # exit(1)
+    else:
+        logger.info("Redis connection established successfully")
 
     try:
         # Start background services

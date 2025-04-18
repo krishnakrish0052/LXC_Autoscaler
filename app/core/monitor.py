@@ -18,7 +18,7 @@ import redis
 from config import Config
 
 # Import DB and models
-from app.utils.helpers import get_db_session
+from app.utils.helpers import get_db_session, get_redis_connection
 from app.models.containers import Container
 
 # Configure logging
@@ -36,18 +36,11 @@ class LXCMonitor:
         self.prev_net_stats = {}
         self.prev_disk_stats = {}
 
-        # Initialize Redis connection with optional password
-        redis_params = {
-            'host': redis_host or Config.REDIS_HOST,
-            'port': redis_port or Config.REDIS_PORT,
-            'db': 0,
-            'decode_responses': True
-        }
-        # Only add password if it's not None
-        if Config.REDIS_PASSWORD:
-            redis_params['password'] = Config.REDIS_PASSWORD
-            
-        self.redis = redis.StrictRedis(**redis_params)
+        # Use helper function to get Redis connection
+        self.redis = get_redis_connection(
+            host=redis_host or Config.REDIS_HOST, 
+            port=redis_port or Config.REDIS_PORT
+        )
 
         # Initialize metrics
         self.NODE_CPU_LOAD = Gauge('node_cpu_load', 'System CPU load percentage')
