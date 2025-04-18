@@ -4,6 +4,7 @@ from app.services.metrics import MetricsService
 import json
 import redis
 from config import Config
+from app.utils.helpers import get_redis_connection
 
 metrics_bp = Blueprint('metrics', __name__, url_prefix='/api/metrics')
 
@@ -51,12 +52,7 @@ def instance_history(name):
 @metrics_bp.route('/stream', methods=['GET'])
 def metrics_stream():
     """SSE stream for real-time metrics updates"""
-    redis_client = redis.StrictRedis(
-        host=Config.REDIS_HOST, 
-        port=Config.REDIS_PORT,
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_connection()
     pubsub = redis_client.pubsub()
     pubsub.subscribe('instance_metrics')
 
@@ -75,12 +71,7 @@ def metrics_stream():
 @metrics_bp.route('/cpu', methods=['GET'])
 def cpu_metrics():
     """Get CPU metrics for all instances"""
-    redis_client = redis.StrictRedis(
-        host=Config.REDIS_HOST, 
-        port=Config.REDIS_PORT,
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_connection()
     
     # Get system CPU metrics
     system_metrics_str = redis_client.get('system:metrics')
@@ -107,12 +98,7 @@ def cpu_metrics():
 @metrics_bp.route('/memory', methods=['GET'])
 def memory_metrics():
     """Get memory metrics for all instances"""
-    redis_client = redis.StrictRedis(
-        host=Config.REDIS_HOST, 
-        port=Config.REDIS_PORT,
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_connection()
     
     # Get system memory metrics
     system_metrics_str = redis_client.get('system:metrics')

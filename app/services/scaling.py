@@ -8,7 +8,7 @@ import redis
 from celery import Celery
 from app.models.instances import Instance, ScalingHistory
 from app.models.scaling import ScalingRule
-from app.utils.helpers import get_db_session
+from app.utils.helpers import get_db_session, get_redis_connection
 from app.models.loadbalancer import LoadBalancer, LoadBalancerTarget
 from config import Config
 
@@ -19,11 +19,9 @@ app = Celery('scaling_executor', broker=f'redis://{Config.REDIS_HOST}:{Config.RE
 class LXCScalingService:
     def __init__(self, redis_host=None, redis_port=None):
         self.client = pylxd.Client()
-        self.redis = redis.StrictRedis(
-            host=redis_host or Config.REDIS_HOST, 
-            port=redis_port or Config.REDIS_PORT, 
-            db=0,
-            decode_responses=True
+        self.redis = get_redis_connection(
+            host=redis_host, 
+            port=redis_port
         )
         self.session = get_db_session()
         self.cooldowns = {}

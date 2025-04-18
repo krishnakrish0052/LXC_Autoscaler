@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify, request, current_app
-from app.models.containers import Container, ScalingHistory
+from app.models.containers import Container
 from app.models.scaling import ScalingRule
-from app.utils.helpers import get_db_session
+from app.models.instances import ScalingHistory
+from app.utils.helpers import get_db_session, get_redis_connection
 from datetime import datetime
 import json
 import redis
@@ -13,23 +14,10 @@ import socket
 
 bp = Blueprint('api', __name__)
 
-def get_redis_connection():
-    return redis.StrictRedis(
-        host=Config.REDIS_HOST,
-        port=Config.REDIS_PORT,
-        db=0,
-        decode_responses=True
-    )
-
 @bp.route('/containers')
 def list_containers():
     session = get_db_session()
-    redis_client = redis.StrictRedis(
-        host=Config.REDIS_HOST,
-        port=Config.REDIS_PORT,
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_connection()
     
     # Get containers with metrics
     containers = session.query(Container).all()
@@ -50,24 +38,16 @@ def list_containers():
         }
         containers_with_metrics.append(container_data)
     
-    # Add template filters for formatting
-    @app.template_filter('format_bytes')
-    def format_bytes(num, precision=1):
-        if num is None:
-            return "0 B"
-        num = int(num)
-        if num == 0:
-            return "0 B"
-        units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-        decimal_places = 0 if num < 1024 else precision
-        for unit in units:
-            if abs(num) < 1024.0:
-                return f"{num:.{decimal_places}f} {unit}"
-            num /= 1024.0
-        return f"{num:.{precision}f} {units[-1]}"
-    
-    return render_template('containers/list.html', containers=containers_with_metrics)    
-@bp.route('/containers/<name>', methods=['GET'])
+    return jsonify([{
+        'id': container.id,
+        'name': container.name,
+        'status': container.status,
+        'created_at': container.created_at.isoformat() if container.created_at else None,
+        'updated_at': container.updated_at.isoformat() if container.updated_at else None,
+        'metrics': json.loads(metrics_data) if metrics_data else {}
+    } for container in containers])    
+
+@bp.route("/containers/<name>", methods=["GET"])
 def get_container(name):
     """Get detailed information about a specific container"""
     session = get_db_session()
@@ -90,7 +70,7 @@ def get_container(name):
         'metrics': json.loads(metrics) if metrics else None
     })
 
-@bp.route('/containers/<name>/metrics', methods=['GET'])
+@bp.route("/containers/<name>/metrics", methods=["GET"])
 def container_metrics(name):
     """Get current metrics for a specific container"""
     redis_client = get_redis_connection()
@@ -113,7 +93,7 @@ def container_metrics(name):
         'timestamp': datetime.utcnow().isoformat()
     })
 
-@bp.route('/containers/<name>/<action>', methods=['POST'])
+@bp.route("/containers/<name>/<action>", methods=["POST"])
 def container_action(name, action):
     """Perform actions on a container (start, stop, restart, delete)"""
     try:
@@ -344,7 +324,7 @@ def scaling_history():
 
     return jsonify([{
         'id': h.id,
-        'container_name': h.container_name,
+        'container_name': h.container_name if hasattr(h, 'container_name') else h.instance_name,
         'action': h.action,
         'reason': h.reason,
         'parameters': json.loads(h.parameters) if h.parameters else None,

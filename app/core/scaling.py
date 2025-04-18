@@ -5,21 +5,23 @@ from datetime import datetime, timedelta
 import redis
 import json
 from celery import Celery
-from app.models.containers import Container, ScalingHistory
-from app.utils.helpers import get_db_session
+from app.models.containers import Container
+from app.models.instances import ScalingHistory
+from app.utils.helpers import get_db_session, get_redis_connection
+from config import Config
 
 logger = logging.getLogger(__name__)
 
-app = Celery('scaling_executor', broker='redis://localhost:6379/0')
+app = Celery('scaling_executor', 
+             broker=f'redis://{Config.REDIS_HOST}:{Config.REDIS_PORT}/0',
+             backend=f'redis://{Config.REDIS_HOST}:{Config.REDIS_PORT}/0')
 
 class LXCManager:
-    def __init__(self, redis_host='localhost', redis_port=6379):
+    def __init__(self, redis_host=None, redis_port=None):
         self.client = pylxd.Client()
-        self.redis = redis.StrictRedis(
-            host=redis_host, 
-            port=redis_port, 
-            db=0,
-            decode_responses=True
+        self.redis = get_redis_connection(
+            host=redis_host,
+            port=redis_port
         )
         self.session = get_db_session()
         self.cooldowns = {}
