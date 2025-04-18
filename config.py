@@ -15,10 +15,10 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Redis
-    REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', 'none')
+    REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', None)  # None disables authentication
     REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
     REDIS_PORT = 6379
-    REDIS_METRICS_TTL = int(os.getenv('REDIS_METRICS_TTL', 300))  # ⬅️ Add this line (TTL in seconds)
+    REDIS_METRICS_TTL = int(os.getenv('REDIS_METRICS_TTL', 300))  # TTL in seconds
 
     
     # LXD
