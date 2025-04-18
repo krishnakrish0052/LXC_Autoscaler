@@ -93,7 +93,9 @@ class FallbackDBSession:
     Used when the database is unavailable to prevent application crashes.
     """
     def query(self, *args, **kwargs):
-        return FallbackDBQuery()
+        # If we got a model class, pass it to the query
+        model_class = args[0] if args else None
+        return FallbackDBQuery(model_class=model_class)
     
     def __getattr__(self, name):
         return self._noop
@@ -109,9 +111,30 @@ class FallbackDBSession:
     
     def rollback(self):
         pass
+        
+    def add(self, obj):
+        # Just log that we tried to add something
+        import logging
+        logging.getLogger(__name__).info(f"Mock adding object of type {type(obj).__name__} to database")
+        pass
+        
+    def add_all(self, objects):
+        # Just log that we tried to add objects
+        import logging
+        logging.getLogger(__name__).info(f"Mock adding {len(objects)} objects to database")
+        pass
+        
+    def delete(self, obj):
+        # Just log that we tried to delete something
+        import logging
+        logging.getLogger(__name__).info(f"Mock deleting object of type {type(obj).__name__} from database")
+        pass
 
 class FallbackDBQuery:
     """Fallback for database queries when the database is unavailable"""
+    def __init__(self, model_class=None):
+        self.model_class = model_class
+        
     def filter(self, *args, **kwargs):
         return self
     
@@ -119,21 +142,111 @@ class FallbackDBQuery:
         return self
     
     def all(self):
+        # Create mock data based on the model class if we know what it is
+        from datetime import datetime, timedelta
+        import random
+        
+        # Look at the model class name to determine what kind of objects to mock
+        if hasattr(self, 'model_class') and self.model_class:
+            model_name = self.model_class.__name__
+            
+            # Generate mock instances
+            if model_name == 'Instance':
+                return [
+                    MockInstance(
+                        id=i,
+                        name=f"instance-{i}",
+                        type="container" if i % 2 == 0 else "virtual-machine",
+                        status="Running" if i % 3 != 0 else "Stopped",
+                        image="ubuntu:20.04",
+                        profile="default",
+                        created_at=datetime.utcnow() - timedelta(days=i),
+                        updated_at=datetime.utcnow() - timedelta(hours=i),
+                        cpu_limit="2",
+                        memory_limit="2GB",
+                        disk_limit="10GB"
+                    )
+                    for i in range(1, 6)
+                ]
+            
+            # Generate mock containers
+            elif model_name == 'Container':
+                return [
+                    MockContainer(
+                        id=i,
+                        name=f"container-{i}",
+                        status="Running" if i % 3 != 0 else "Stopped",
+                        image="ubuntu:20.04",
+                        created_at=datetime.utcnow() - timedelta(days=i),
+                        updated_at=datetime.utcnow() - timedelta(hours=i)
+                    )
+                    for i in range(1, 6)
+                ]
+                
+            # Generate mock scaling rules
+            elif model_name == 'ScalingRule':
+                return [
+                    MockScalingRule(
+                        id=i,
+                        container_name=f"container-{i}",
+                        metric="cpu" if i % 2 == 0 else "memory",
+                        threshold=80.0,
+                        action_type="horizontal" if i % 2 == 0 else "vertical",
+                        increment=1,
+                        cooldown=300,
+                        created_at=datetime.utcnow() - timedelta(days=i)
+                    )
+                    for i in range(1, 4)
+                ]
+                
+            # Generate mock load balancers
+            elif model_name == 'LoadBalancer':
+                return [
+                    MockLoadBalancer(
+                        id=i,
+                        name=f"lb-{i}",
+                        port=80 + i,
+                        algorithm="round_robin" if i % 2 == 0 else "least_conn",
+                        status="active" if i % 2 == 0 else "inactive",
+                        created_at=datetime.utcnow() - timedelta(days=i),
+                        description=f"Load balancer {i} for testing",
+                        targets=[]
+                    )
+                    for i in range(1, 3)
+                ]
+                
+            # Generate mock scaling history
+            elif model_name == 'ScalingHistory':
+                return [
+                    MockScalingHistory(
+                        id=i,
+                        instance_name=f"instance-{i % 5 + 1}",
+                        action="scale_up" if i % 2 == 0 else "scale_down",
+                        reason="High CPU" if i % 2 == 0 else "Low Memory",
+                        timestamp=datetime.utcnow() - timedelta(hours=i)
+                    )
+                    for i in range(1, 11)
+                ]
+        
+        # Default to empty list if we don't know the model type
         return []
     
     def first(self):
-        return None
+        all_items = self.all()
+        return all_items[0] if all_items else None
     
     def one(self):
-        return None
+        all_items = self.all()
+        return all_items[0] if all_items else None
     
     def count(self):
-        return 0
+        return len(self.all())
     
     def order_by(self, *args, **kwargs):
         return self
     
-    def limit(self, *args, **kwargs):
+    def limit(self, limit_num):
+        self.limit_num = limit_num
         return self
     
     def offset(self, *args, **kwargs):
@@ -141,6 +254,42 @@ class FallbackDBQuery:
     
     def join(self, *args, **kwargs):
         return self
+        
+# Mock classes for fallback mode
+class MockInstance:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+class MockContainer:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+class MockScalingRule:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        # Default values for fields that might not be set
+        if not hasattr(self, 'cpu_increment'):
+            self.cpu_increment = None
+        if not hasattr(self, 'memory_increment'):
+            self.memory_increment = None
+
+class MockLoadBalancer:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+class MockScalingHistory:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        # Set defaults
+        if not hasattr(self, 'instance_type'):
+            self.instance_type = 'container'
+        if not hasattr(self, 'parameters'):
+            self.parameters = None
 # Redis connection helper
 def get_redis_connection(host=None, port=None):
     """

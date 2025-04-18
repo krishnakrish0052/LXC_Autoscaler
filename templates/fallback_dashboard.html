@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "fallback_base.html" %}
 
 {% block content %}
 <div class="container mt-4">
@@ -20,13 +20,13 @@
                 <div class="col-md-6">
                     <h6>Database</h6>
                     <p>Status: <span class="badge bg-danger">Unavailable</span></p>
-                    <p>To fix database issues, run: <code>./db_setup.py</code></p>
+                    <p>To fix database issues, run: <code>python db_init.py</code></p>
                 </div>
                 <div class="col-md-6">
                     <h6>Redis</h6>
                     <p>Status: <span class="badge {% if redis_ok %}bg-success{% else %}bg-danger{% endif %}">{{ "Available" if redis_ok else "Unavailable" }}</span></p>
                     {% if not redis_ok %}
-                    <p>To fix Redis issues, run: <code>./redis_config.py</code></p>
+                    <p>To fix Redis issues, check Redis server is running on: <code>{{ config.REDIS_HOST }}:{{ config.REDIS_PORT }}</code></p>
                     {% endif %}
                 </div>
             </div>
@@ -34,24 +34,7 @@
     </div>
 
     <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="card-title mb-0">Active Containers</h5>
-                </div>
-                <div class="card-body">
-                    <div class="alert alert-info">
-                        Container information unavailable due to database connectivity issues.
-                    </div>
-                    <ul>
-                        {% for container in containers %}
-                        <li>{{ container }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
+        <div class="col-md-4">
             <div class="card">
                 <div class="card-header bg-primary text-white">
                     <h5 class="card-title mb-0">System Resources</h5>
@@ -69,27 +52,116 @@
                 </div>
             </div>
         </div>
+        
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Container Information</h5>
+                </div>
+                <div class="card-body">
+                    {% if containers %}
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for container in containers %}
+                                <tr>
+                                    <td>{{ container.name }}</td>
+                                    <td>
+                                        <span class="badge {% if container.status == 'Running' %}bg-success{% else %}bg-danger{% endif %}">
+                                            {{ container.status }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" disabled>Details</button>
+                                        <button class="btn btn-sm btn-info" disabled>Metrics</button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        No containers found. Please ensure LXD is properly configured.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
+
+    {% if vms %}
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="card-title mb-0">Virtual Machines</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vm in vms %}
+                        <tr>
+                            <td>{{ vm.name }}</td>
+                            <td>
+                                <span class="badge {% if vm.status == 'Running' %}bg-success{% else %}bg-danger{% endif %}">
+                                    {{ vm.status }}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" disabled>Details</button>
+                                <button class="btn btn-sm btn-info" disabled>Metrics</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="card">
         <div class="card-header bg-primary text-white">
             <h5 class="card-title mb-0">Recovery Instructions</h5>
         </div>
         <div class="card-body">
-            <h6>Database Setup</h6>
-            <p>Run the database setup utility to create the necessary tables:</p>
-            <pre><code>./db_setup.py</code></pre>
-            
-            <h6>Redis Configuration</h6>
-            <p>If you're experiencing Redis connection issues, run the Redis configuration utility:</p>
-            <pre><code>./redis_config.py</code></pre>
-            
-            <h6>Manual Database Setup</h6>
-            <p>If the automated tools don't resolve the issue, try running the Alembic migrations manually:</p>
-            <pre><code>alembic upgrade head</code></pre>
-            
-            <h6>Database Connection String</h6>
-            <p>Check your .env file or config.py to ensure the DATABASE_URL is correct.</p>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Database Initialization</h6>
+                    <p>Run the database initialization script to create the necessary tables and sample data:</p>
+                    <pre><code>python db_init.py</code></pre>
+                    
+                    <h6>Alembic Migration</h6>
+                    <p>If the database exists but needs schema updates:</p>
+                    <pre><code>alembic upgrade head</code></pre>
+                </div>
+                
+                <div class="col-md-6">
+                    <h6>Database Connection</h6>
+                    <p>Check your config.py to ensure the DATABASE_URL is correct:</p>
+                    <pre><code>postgresql://mizzle:password@localhost/mizzle</code></pre>
+                    
+                    <h6>Create Database (if needed)</h6>
+                    <p>If the database doesn't exist:</p>
+                    <pre><code>createdb -U postgres mizzle
+psql -U postgres -c "CREATE USER mizzle WITH PASSWORD 'password';"
+psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE mizzle TO mizzle;"</code></pre>
+                </div>
+            </div>
         </div>
     </div>
 </div>
