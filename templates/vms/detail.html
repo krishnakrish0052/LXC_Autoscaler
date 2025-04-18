@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+
+{% block title %}VM Details: {{ vm.name }} - LXC Autoscaler{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5>VM Information</h5>
+                <div>
+                    {% if vm.status == 'Running' %}
+                    <button class="btn btn-sm btn-warning stop-vm" data-vm-name="{{ vm.name }}">Stop</button>
+                    <button class="btn btn-sm btn-info restart-vm" data-vm-name="{{ vm.name }}">Restart</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-success start-vm" data-vm-name="{{ vm.name }}">Start</button>
+                    {% endif %}
+                    <button class="btn btn-sm btn-danger delete-vm" data-vm-name="{{ vm.name }}">Delete</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Name:</dt>
+                    <dd class="col-sm-8">{{ vm.name }}</dd>
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge bg-{% if vm.status == 'Running' %}success{% else %}danger{% endif %}">
+                            {{ vm.status }}
+                        </span>
+                    </dd>
+                    
+                    <dt class="col-sm-4">Type:</dt>
+                    <dd class="col-sm-8">Virtual Machine</dd>
+                    
+                    <dt class="col-sm-4">Created:</dt>
+                    <dd class="col-sm-8">{{ vm.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</dd>
+                    
+                    <dt class="col-sm-4">Uptime:</dt>
+                    <dd class="col-sm-8">{{ metrics.uptime|default(0)|format_uptime }}</dd>
+                    
+                    <dt class="col-sm-4">Architecture:</dt>
+                    <dd class="col-sm-8">{{ vm.architecture|default('x86_64') }}</dd>
+                    
+                    <dt class="col-sm-4">Profile:</dt>
+                    <dd class="col-sm-8">{{ vm.profile|default('default') }}</dd>
+                </dl>
+                
+                <div class="mt-3">
+                    <h6>Network Information</h6>
+                    {% if metrics.network %}
+                        {% for iface, data in metrics.network.items() %}
+                            <div class="mb-2">
+                                <strong>{{ iface }}:</strong>
+                                {% for addr in data.addresses|default([]) %}
+                                    {% if addr.family == 'inet' %}
+                                        <div>{{ addr.address }}/{{ addr.netmask }}</div>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-muted">No network information available</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5>Resource Limits</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">CPU Limit:</dt>
+                    <dd class="col-sm-8">{{ vm.cpu_limit|default('Unlimited') }}</dd>
+                    
+                    <dt class="col-sm-4">Memory Limit:</dt>
+                    <dd class="col-sm-8">{% if metrics.memory_limit %}{{ (metrics.memory_limit / 1024 / 1024)|round(0) }} MB{% else %}Unlimited{% endif %}</dd>
+                    
+                    <dt class="col-sm-4">Storage Limit:</dt>
+                    <dd class="col-sm-8">{{ vm.disk_limit|default('Unlimited') }}</dd>
+                </dl>
+                
+                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#resizeModal">
+                    Resize Resources
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Resource Usage</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label>CPU Usage: {{ metrics.cpu|default(0)|round(2) }}%</label>
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" 
+                             style="width: {{ metrics.cpu|default(0) }}%"></div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label>Memory Usage: {{ metrics.memory|default(0)|format_bytes }} {% if metrics.memory_limit and metrics.memory_limit > 0 %}of {{ metrics.memory_limit|format_bytes }}{% endif %}</label>
+                    <div class="progress">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {{ metrics.memory_percent|default(0) }}%">
+                             {{ metrics.memory_percent|default(0)|round(1) }}%
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label>Disk Usage: {{ metrics.disk_usage|default(0)|format_bytes }} {% if metrics.disk_limit and metrics.disk_limit > 0 %}of {{ metrics.disk_limit|format_bytes }}{% endif %}</label>
+                    <div class="progress">
+                        <div class="progress-bar bg-info" role="progressbar" 
+                             style="width: {{ metrics.disk_percent|default(0) }}%">
+                             {{ metrics.disk_percent|default(0)|round(1) }}%
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Process Information</h6>
+                        <dl class="row">
+                            <dt class="col-sm-6">Processes:</dt>
+                            <dd class="col-sm-6">{{ metrics.processes|default(0) }}</dd>
+                            
+                            <dt class="col-sm-6">Threads:</dt>
+                            <dd class="col-sm-6">{{ metrics.threads|default(0) }}</dd>
+                        </dl>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6>Load Information</h6>
+                        <dl class="row">
+                            <dt class="col-sm-6">CPU Load:</dt>
+                            <dd class="col-sm-6">{{ metrics.cpu_load|default('N/A') }}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Network Activity</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Interface</th>
+                                        <th>Received</th>
+                                        <th>Sent</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if metrics.network %}
+                                        {% for iface, data in metrics.network.items() %}
+                                        <tr>
+                                            <td>{{ iface }}</td>
+                                            <td>{{ data.in|default(0)|format_bytes }}</td>
+                                            <td>{{ data.out|default(0)|format_bytes }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="3" class="text-center">No network data available</td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Disk Activity</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Device</th>
+                                        <th>Read</th>
+                                        <th>Written</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if metrics.disk %}
+                                        {% for device, data in metrics.disk.items() %}
+                                        <tr>
+                                            <td>{{ device }}</td>
+                                            <td>{{ data.read|default(0)|format_bytes }}</td>
+                                            <td>{{ data.write|default(0)|format_bytes }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="3" class="text-center">No disk data available</td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5>Scaling History</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Action</th>
+                                <th>Reason</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if scaling_history %}
+                                {% for history in scaling_history %}
+                                <tr>
+                                    <td>
+                                        <span class="badge bg-{% if history.action == 'scale_up' %}info{% elif history.action == 'scale_down' %}warning{% else %}secondary{% endif %}">
+                                            {{ history.action }}
+                                        </span>
+                                    </td>
+                                    <td>{{ history.reason }}</td>
+                                    <td>{{ history.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-center">No scaling history available</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Resize Resources Modal -->
+<div class="modal fade" id="resizeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Resize VM Resources</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="resizeForm">
+                    <div class="mb-3">
+                        <label for="new_cpu_limit" class="form-label">CPU Limit</label>
+                        <input type="number" class="form-control" id="new_cpu_limit" min="1" value="{{ vm.cpu_limit|default(2) }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="new_memory_limit" class="form-label">Memory Limit (MB)</label>
+                        <input type="number" class="form-control" id="new_memory_limit" min="512" value="{{ (metrics.memory_limit / 1024 / 1024)|round(0) if metrics.memory_limit else 2048 }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="new_disk_size" class="form-label">Disk Size (GB)</label>
+                        <input type="number" class="form-control" id="new_disk_size" min="5" value="{{ vm.disk_size|default(20) }}">
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <small>Note: Resizing may require a VM restart for changes to take effect.</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="resize-btn">Apply Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirm-action">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+    const resizeModal = new bootstrap.Modal(document.getElementById('resizeModal'));
+    let actionFunction = null;
+    
+    // VM action handlers
+    function setupActionHandler(selector, message, action) {
+        document.querySelectorAll(selector).forEach(btn => {
+            btn.addEventListener('click', function() {
+                const vmName = this.dataset.vmName;
+                document.getElementById('modal-message').textContent = `${message} ${vmName}?`;
+                
+                actionFunction = async () => {
+                    try {
+                        const response = await fetch(`/api/vms/${vmName}/${action}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || `Failed to ${action} VM`);
+                        }
+                        
+                        window.location.reload();
+                    } catch (error) {
+                        alert('Error: ' + error.message);
+                    }
+                };
+                
+                confirmModal.show();
+            });
+        });
+    }
+    
+    setupActionHandler('.stop-vm', 'Are you sure you want to stop', 'stop');
+    setupActionHandler('.start-vm', 'Are you sure you want to start', 'start');
+    setupActionHandler('.restart-vm', 'Are you sure you want to restart', 'restart');
+    setupActionHandler('.delete-vm', 'Are you sure you want to delete', 'delete');
+    
+    // Confirm action handler
+    document.getElementById('confirm-action').addEventListener('click', async function() {
+        if (actionFunction) {
+            confirmModal.hide();
+            await actionFunction();
+            actionFunction = null;
+        }
+    });
+    
+    // Resize resources handler
+    document.getElementById('resize-btn').addEventListener('click', async function() {
+        const formData = {
+            cpu_limit: parseInt(document.getElementById('new_cpu_limit').value),
+            memory_limit: parseInt(document.getElementById('new_memory_limit').value) * 1024 * 1024, // Convert to bytes
+            disk_size: parseInt(document.getElementById('new_disk_size').value) * 1024 * 1024 * 1024 // Convert to bytes
+        };
+        
+        try {
+            const response = await fetch(`/api/vms/{{ vm.name }}/resize`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to resize VM');
+            }
+            
+            resizeModal.hide();
+            window.location.reload();
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+    
+    // Auto-refresh every 30 seconds
+    setTimeout(() => {
+        window.location.reload();
+    }, 30000);
+});
+</script>
+{% endblock %}

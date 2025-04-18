@@ -10,8 +10,8 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5>Load Balancer Details</h5>
                 <div>
-                    <!-- Use the same detail page for edits -->
-                    <button class="btn btn-sm btn-warning" id="edit-lb">Edit</button>
+                    <!-- Use a modal for editing -->
+                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editLBModal">Edit</button>
                     <button class="btn btn-sm btn-danger" id="delete-lb">Delete</button>
                 </div>
             </div>
@@ -47,66 +47,158 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Auto-scaling Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Auto-scaling Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form id="autoScaleForm">
+                    <div class="mb-3">
+                        <label for="container_prefix" class="form-label">Container/VM Prefix</label>
+                        <input type="text" class="form-control" id="container_prefix" placeholder="e.g., web-">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="min_targets" class="form-label">Minimum Targets</label>
+                        <input type="number" class="form-control" id="min_targets" min="1" value="2">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="max_targets" class="form-label">Maximum Targets</label>
+                        <input type="number" class="form-control" id="max_targets" min="1" value="5">
+                    </div>
+                    
+                    <button type="button" class="btn btn-primary" id="apply-autoscale">Apply Auto-scaling</button>
+                </form>
+            </div>
+        </div>
     </div>
     
     <div class="col-md-8">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5>Target Containers</h5>
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTargetModal">Add Target</button>
+        <!-- Tabs for different load balancer aspects -->
+        <ul class="nav nav-tabs mb-3" id="lbTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="targets-tab" data-bs-toggle="tab" data-bs-target="#targets-pane" 
+                        type="button" role="tab" aria-controls="targets-pane" aria-selected="true">
+                    Targets
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="profiles-tab" data-bs-toggle="tab" data-bs-target="#profiles-pane" 
+                        type="button" role="tab" aria-controls="profiles-pane" aria-selected="false">
+                    Network Profiles
+                </button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="lbTabContent">
+            <!-- Targets Tab -->
+            <div class="tab-pane fade show active" id="targets-pane" role="tabpanel" aria-labelledby="targets-tab">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5>Target Containers & VMs</h5>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTargetModal">Add Target</button>
+                    </div>
+                    <div class="card-body">
+                        {% if load_balancer.targets %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Type</th>
+                                        <th>IP:Port</th>
+                                        <th>Weight</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for target in load_balancer.targets %}
+                                    <tr>
+                                        <td>{{ target.container_name }}</td>
+                                        <td>
+                                            {% if target.container_name.startswith('vm-') %}
+                                                <span class="badge bg-info">VM</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">Container</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ target.ip_address }}:{{ target.port }}</td>
+                                        <td>{{ target.weight }}</td>
+                                        <td>
+                                            <span class="badge bg-{% if target.active and target.health_status == 'healthy' %}success{% elif target.active %}warning{% else %}danger{% endif %}">
+                                                {% if target.active %}{{ target.health_status }}{% else %}inactive{% endif %}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <button class="btn btn-sm btn-warning edit-target" 
+                                                        data-target-id="{{ target.id }}"
+                                                        data-container="{{ target.container_name }}"
+                                                        data-ip="{{ target.ip_address }}"
+                                                        data-port="{{ target.port }}"
+                                                        data-weight="{{ target.weight }}"
+                                                        data-active="{{ target.active }}">
+                                                    Edit
+                                                </button>
+                                                <button class="btn btn-sm btn-danger delete-target" 
+                                                        data-target-id="{{ target.id }}"
+                                                        data-container="{{ target.container_name }}">
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">
+                            No targets found. Add containers or VMs to this load balancer using the "Add Target" button.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                {% if load_balancer.targets %}
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Container</th>
-                                <th>IP:Port</th>
-                                <th>Weight</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for target in load_balancer.targets %}
-                            <tr>
-                                <td>{{ target.container_name }}</td>
-                                <td>{{ target.ip_address }}:{{ target.port }}</td>
-                                <td>{{ target.weight }}</td>
-                                <td>
-                                    <span class="badge bg-{% if target.active and target.health_status == 'healthy' %}success{% elif target.active %}warning{% else %}danger{% endif %}">
-                                        {% if target.active %}{{ target.health_status }}{% else %}inactive{% endif %}
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="btn-group" role="group">
-                                        <button class="btn btn-sm btn-warning edit-target" 
-                                                data-target-id="{{ target.id }}"
-                                                data-container="{{ target.container_name }}"
-                                                data-ip="{{ target.ip_address }}"
-                                                data-port="{{ target.port }}"
-                                                data-weight="{{ target.weight }}"
-                                                data-active="{{ target.active }}">
-                                            Edit
-                                        </button>
-                                        <button class="btn btn-sm btn-danger delete-target" 
-                                                data-target-id="{{ target.id }}"
-                                                data-container="{{ target.container_name }}">
-                                            Delete
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+            
+            <!-- Network Profiles Tab -->
+            <div class="tab-pane fade" id="profiles-pane" role="tabpanel" aria-labelledby="profiles-tab">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5>LXC Network Profiles</h5>
+                        <button class="btn btn-sm btn-primary" id="refresh-profiles">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="profiles-loading" class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p>Loading network profiles...</p>
+                        </div>
+                        <div id="profiles-content" class="d-none">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Profile Name</th>
+                                        <th>Static IP</th>
+                                        <th>Network</th>
+                                        <th>Used By</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="profiles-table">
+                                    <!-- Profiles will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="profiles-empty" class="alert alert-info d-none">
+                            No network profiles found for this load balancer.
+                        </div>
+                    </div>
                 </div>
-                {% else %}
-                <div class="alert alert-info">
-                    No targets found. Add containers to this load balancer using the "Add Target" button.
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -123,7 +215,15 @@
             <div class="modal-body">
                 <form id="addTargetForm">
                     <div class="mb-3">
-                        <label for="container_name" class="form-label">Container</label>
+                        <label for="target_type" class="form-label">Target Type</label>
+                        <select class="form-select" id="target_type" name="target_type">
+                            <option value="container">Container</option>
+                            <option value="vm">Virtual Machine</option>
+                        </select>
+                    </div>
+                
+                    <div class="mb-3">
+                        <label for="container_name" class="form-label" id="container_label">Container</label>
                         <select class="form-select" id="container_name" name="container_name" required>
                             <option value="">Select Container</option>
                             {% for container in containers %}
@@ -133,7 +233,22 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="ip_address" class="form-label">IP Address (Optional)</label>
+                        <label for="vm_name" class="form-label" id="vm_label" style="display: none;">Virtual Machine</label>
+                        <select class="form-select" id="vm_name" name="vm_name" style="display: none;">
+                            <option value="">Select VM</option>
+                            {% for vm in vms %}
+                            <option value="{{ vm.name }}">{{ vm.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use_static_ip" name="use_static_ip">
+                        <label class="form-check-label" for="use_static_ip">Use Static IP (Auto-assigned)</label>
+                    </div>
+                    
+                    <div class="mb-3" id="ip_address_group">
+                        <label for="ip_address" class="form-label">IP Address (Optional if not using static IP)</label>
                         <input type="text" class="form-control" id="ip_address" name="ip_address"
                                placeholder="Leave blank to auto-detect">
                     </div>
@@ -206,6 +321,50 @@
     </div>
 </div>
 
+<!-- Edit Load Balancer Modal -->
+<div class="modal fade" id="editLBModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Load Balancer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editLBForm">
+                    <div class="mb-3">
+                        <label for="edit_lb_name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="edit_lb_name" value="{{ load_balancer.name }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_lb_port" class="form-label">Port</label>
+                        <input type="number" class="form-control" id="edit_lb_port" 
+                               min="1" max="65535" value="{{ load_balancer.port }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_lb_algorithm" class="form-label">Algorithm</label>
+                        <select class="form-select" id="edit_lb_algorithm">
+                            <option value="round_robin" {% if load_balancer.algorithm == 'round_robin' %}selected{% endif %}>Round Robin</option>
+                            <option value="least_connections" {% if load_balancer.algorithm == 'least_connections' %}selected{% endif %}>Least Connections</option>
+                            <option value="source_ip" {% if load_balancer.algorithm == 'source_ip' %}selected{% endif %}>Source IP Hash</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_lb_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="edit_lb_description" rows="3">{{ load_balancer.description }}</textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="update-lb">Update</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Delete confirmation modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
     <div class="modal-dialog">
@@ -236,17 +395,63 @@ document.addEventListener('DOMContentLoaded', function() {
     let deleteType = ''; // 'target' or 'lb'
     let deleteId = null;
     
+    // Toggle between VM and Container selection
+    document.getElementById('target_type').addEventListener('change', function() {
+        const isVM = this.value === 'vm';
+        
+        // Show/hide container field
+        document.getElementById('container_label').style.display = isVM ? 'none' : 'block';
+        document.getElementById('container_name').style.display = isVM ? 'none' : 'block';
+        document.getElementById('container_name').required = !isVM;
+        
+        // Show/hide VM field
+        document.getElementById('vm_label').style.display = isVM ? 'block' : 'none';
+        document.getElementById('vm_name').style.display = isVM ? 'block' : 'none';
+        document.getElementById('vm_name').required = isVM;
+    });
+    
+    // Toggle IP address field visibility based on static IP checkbox
+    document.getElementById('use_static_ip').addEventListener('change', function() {
+        const useStaticIP = this.checked;
+        document.getElementById('ip_address_group').style.display = useStaticIP ? 'none' : 'block';
+    });
+    
     // Add target
     document.getElementById('save-target').addEventListener('click', async function() {
+        const targetType = document.getElementById('target_type').value;
+        const isVM = targetType === 'vm';
+        const useStaticIP = document.getElementById('use_static_ip').checked;
+        
+        // Get the container/VM name based on selected type
+        let targetName;
+        if (isVM) {
+            targetName = document.getElementById('vm_name').value;
+            if (!targetName) {
+                alert('Please select a virtual machine');
+                return;
+            }
+        } else {
+            targetName = document.getElementById('container_name').value;
+            if (!targetName) {
+                alert('Please select a container');
+                return;
+            }
+        }
+        
         const formData = {
-            container_name: document.getElementById('container_name').value,
+            container_name: targetName,
+            target_type: targetType,
+            use_static_ip: useStaticIP,
             port: parseInt(document.getElementById('port').value),
             weight: parseInt(document.getElementById('weight').value)
         };
         
-        const ip = document.getElementById('ip_address').value;
-        if (ip) {
-            formData.ip_address = ip;
+        // Only include IP if not using static IP and a value is provided
+        if (!useStaticIP) {
+            const ip = document.getElementById('ip_address').value;
+            if (ip) {
+                formData.ip_address = ip;
+            }
         }
         
         try {
@@ -337,6 +542,38 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+    // Update load balancer
+    document.getElementById('update-lb').addEventListener('click', async function() {
+        const editLBModal = bootstrap.Modal.getInstance(document.getElementById('editLBModal'));
+        
+        const formData = {
+            name: document.getElementById('edit_lb_name').value,
+            port: parseInt(document.getElementById('edit_lb_port').value),
+            algorithm: document.getElementById('edit_lb_algorithm').value,
+            description: document.getElementById('edit_lb_description').value
+        };
+        
+        try {
+            const response = await fetch(`/api/load-balancers/{{ load_balancer.id }}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to update load balancer');
+            }
+            
+            editLBModal.hide();
+            window.location.reload();
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+    
     // Delete load balancer
     document.getElementById('delete-lb').addEventListener('click', function() {
         deleteType = 'lb';
@@ -379,28 +616,199 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Toggle load balancer status
-    document.getElementById('toggle-status').addEventListener('click', async function() {
-        const newStatus = {{ 'inactive' if load_balancer.status == 'active' else 'active' }};
+    document.getElementById('toggle-status').addEventListener('click', function() {
+        // Get the current status and determine the new status
+        const currentStatus = "{{ load_balancer.status }}";
+        const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+        
+        fetch(`/api/load-balancers/{{ load_balancer.id }}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                status: newStatus
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Failed to update status');
+                });
+            }
+            return response.json();
+        })
+        .then(() => {
+            window.location.reload();
+        })
+        .catch(error => {
+            alert('Error: ' + error.message);
+        });
+    });
+    
+    // Load network profiles
+    function loadNetworkProfiles() {
+        const loadingEl = document.getElementById('profiles-loading');
+        const contentEl = document.getElementById('profiles-content');
+        const emptyEl = document.getElementById('profiles-empty');
+        const tableEl = document.getElementById('profiles-table');
+        
+        // Show loading, hide content and empty message
+        loadingEl.classList.remove('d-none');
+        contentEl.classList.add('d-none');
+        emptyEl.classList.add('d-none');
+        
+        // Fetch profiles
+        fetch(`/api/load-balancers/{{ load_balancer.id }}/profiles`)
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.error || 'Failed to load profiles');
+                    });
+                }
+                return response.json();
+            })
+            .then(profiles => {
+                // Hide loading
+                loadingEl.classList.add('d-none');
+                
+                if (profiles.length === 0) {
+                    // Show empty message
+                    emptyEl.classList.remove('d-none');
+                } else {
+                    // Show content and populate table
+                    contentEl.classList.remove('d-none');
+                    
+                    // Clear existing rows
+                    tableEl.innerHTML = '';
+                    
+                    // Add rows for each profile
+                    profiles.forEach(profile => {
+                        const row = document.createElement('tr');
+                        
+                        // Profile name cell
+                        const nameCell = document.createElement('td');
+                        nameCell.textContent = profile.name;
+                        row.appendChild(nameCell);
+                        
+                        // Static IP cell
+                        const ipCell = document.createElement('td');
+                        if (profile.network && profile.network.static_ip) {
+                            ipCell.textContent = profile.network.static_ip;
+                        } else {
+                            ipCell.textContent = '—';
+                        }
+                        row.appendChild(ipCell);
+                        
+                        // Network cell
+                        const networkCell = document.createElement('td');
+                        if (profile.network) {
+                            networkCell.textContent = `${profile.network.nictype} on ${profile.network.parent}`;
+                        } else {
+                            networkCell.textContent = '—';
+                        }
+                        row.appendChild(networkCell);
+                        
+                        // Used by cell
+                        const usedByCell = document.createElement('td');
+                        if (profile.used_by && profile.used_by.length > 0) {
+                            usedByCell.textContent = profile.used_by.join(', ');
+                        } else {
+                            usedByCell.textContent = 'Not in use';
+                        }
+                        row.appendChild(usedByCell);
+                        
+                        tableEl.appendChild(row);
+                    });
+                }
+            })
+            .catch(error => {
+                // Hide loading, show error
+                loadingEl.classList.add('d-none');
+                emptyEl.classList.remove('d-none');
+                emptyEl.textContent = `Error loading profiles: ${error.message}`;
+                emptyEl.classList.remove('alert-info');
+                emptyEl.classList.add('alert-danger');
+            });
+    }
+    
+    // Load profiles when tab is activated
+    document.getElementById('profiles-tab').addEventListener('click', function() {
+        loadNetworkProfiles();
+    });
+    
+    // Refresh profiles button
+    document.getElementById('refresh-profiles').addEventListener('click', function() {
+        loadNetworkProfiles();
+    });
+    
+    // Auto-scale load balancer
+    document.getElementById('apply-autoscale').addEventListener('click', async function() {
+        const containerPrefix = document.getElementById('container_prefix').value;
+        if (!containerPrefix) {
+            alert('Please enter a container prefix');
+            return;
+        }
+        
+        const minTargets = parseInt(document.getElementById('min_targets').value);
+        const maxTargets = parseInt(document.getElementById('max_targets').value);
+        
+        if (minTargets < 1 || maxTargets < minTargets) {
+            alert('Invalid min/max targets values');
+            return;
+        }
+        
+        const button = this;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Applying...';
+        
+        const formData = {
+            container_prefix: containerPrefix,
+            min_targets: minTargets,
+            max_targets: maxTargets
+        };
         
         try {
-            const response = await fetch(`/api/load-balancers/{{ load_balancer.id }}`, {
-                method: 'PUT',
+            const response = await fetch('/api/load-balancers/auto-scale', {
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    status: newStatus
-                })
+                body: JSON.stringify(formData)
             });
             
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to update status');
+                throw new Error(errorData.error || 'Failed to apply auto-scaling');
             }
             
+            const result = await response.json();
+            
+            // Check for errors in result
+            let hasErrors = false;
+            let errorMessages = [];
+            
+            for (const lbId in result) {
+                const lbResult = result[lbId];
+                if (lbResult.errors && lbResult.errors.length > 0) {
+                    hasErrors = true;
+                    errorMessages.push(...lbResult.errors);
+                }
+            }
+            
+            if (hasErrors) {
+                alert(`Auto-scaling completed with errors:\n${errorMessages.join('\n')}`);
+            } else {
+                alert('Auto-scaling applied successfully!');
+            }
+            
+            // Reload the page to update the UI
             window.location.reload();
+            
         } catch (error) {
             alert('Error: ' + error.message);
+            button.disabled = false;
+            button.textContent = 'Apply Auto-scaling';
         }
     });
 });

@@ -485,23 +485,70 @@ def load_balancer_targets(lb_id):
         if not all(field in data for field in required_fields):
             return jsonify({'error': 'Missing required fields'}), 400
             
-        # Get container IP
-        container_ip = data.get('ip_address') or get_container_ip(data['container_name'])
-        if not container_ip:
-            return jsonify({'error': f"Could not determine IP for container {data['container_name']}"}), 400
-            
-        # Create new target
-        target = LoadBalancerTarget(
-            load_balancer_id=lb_id,
-            container_name=data['container_name'],
-            ip_address=container_ip,
-            port=data['port'],
-            weight=data.get('weight', 1),
-            active=data.get('active', True)
-        )
+        # Check if this is a container or VM
+        target_type = data.get('target_type', 'container')
+        use_static_ip = data.get('use_static_ip', False)
         
-        session.add(target)
-        session.commit()
+        # Import the LoadBalancerService
+        from app.services.loadbalancer import LoadBalancerService
+        lb_service = LoadBalancerService()
+        
+        if target_type == 'virtual-machine' or target_type == 'vm':
+            # Add VM as target
+            success = lb_service.add_vm_target(
+                load_balancer_id=lb_id,
+                vm_name=data['container_name'],
+                port=data['port'],
+                weight=data.get('weight', 1),
+                use_static_ip=use_static_ip
+            )
+            
+            if not success:
+                return jsonify({'error': f"Failed to add VM {data['container_name']} to load balancer"}), 500
+                
+            # Get the newly created target
+            target = session.query(LoadBalancerTarget).filter(
+                LoadBalancerTarget.load_balancer_id == lb_id,
+                LoadBalancerTarget.container_name == data['container_name']
+            ).first()
+            
+        else:
+            # Add container with static IP if requested
+            if use_static_ip:
+                success = lb_service.add_target(
+                    load_balancer_id=lb_id,
+                    container_name=data['container_name'],
+                    port=data['port'],
+                    weight=data.get('weight', 1),
+                    use_static_ip=True
+                )
+                
+                if not success:
+                    return jsonify({'error': f"Failed to add container {data['container_name']} with static IP"}), 500
+                    
+                # Get the newly created target
+                target = session.query(LoadBalancerTarget).filter(
+                    LoadBalancerTarget.load_balancer_id == lb_id,
+                    LoadBalancerTarget.container_name == data['container_name']
+                ).first()
+            else:
+                # Fallback to original implementation for backward compatibility
+                container_ip = data.get('ip_address') or get_container_ip(data['container_name'])
+                if not container_ip:
+                    return jsonify({'error': f"Could not determine IP for container {data['container_name']}"}), 400
+                    
+                # Create new target
+                target = LoadBalancerTarget(
+                    load_balancer_id=lb_id,
+                    container_name=data['container_name'],
+                    ip_address=container_ip,
+                    port=data['port'],
+                    weight=data.get('weight', 1),
+                    active=data.get('active', True)
+                )
+                
+                session.add(target)
+                session.commit()
         
         return jsonify({
             'id': target.id,
@@ -510,7 +557,8 @@ def load_balancer_targets(lb_id):
             'port': target.port,
             'weight': target.weight,
             'active': target.active,
-            'health_status': target.health_status
+            'health_status': target.health_status,
+            'target_type': target_type
         }), 201
     
     # GET request - list all targets
@@ -521,7 +569,8 @@ def load_balancer_targets(lb_id):
         'port': target.port,
         'weight': target.weight,
         'active': target.active,
-        'health_status': target.health_status
+        'health_status': target.health_status,
+        'target_type': 'vm' if target.container_name.startswith('vm-') else 'container'
     } for target in load_balancer.targets])
 
 @bp.route('/load-balancers/<int:lb_id>/targets/<int:target_id>', methods=['PUT', 'DELETE'])
@@ -557,3 +606,100 @@ def load_balancer_target_detail(lb_id, target_id):
         session.delete(target)
         session.commit()
         return jsonify({'message': 'Target deleted'})
+        
+@bp.route('/load-balancers/auto-scale', methods=['POST'])
+def auto_scale_load_balancer():
+    """
+    Auto-scale load balancer targets based on container prefix
+    
+    Expects JSON with:
+    - container_prefix: The prefix of containers to match (e.g., 'web-')
+    - min_targets: Minimum number of targets per load balancer (default: 2)
+    - max_targets: Maximum number of targets per load balancer (default: 5)
+    """
+    data = request.get_json()
+    if not data or 'container_prefix' not in data:
+        return jsonify({'error': 'Missing container_prefix parameter'}), 400
+        
+    container_prefix = data['container_prefix']
+    min_targets = data.get('min_targets', 2)
+    max_targets = data.get('max_targets', 5)
+    
+    # Validate numeric inputs
+    try:
+        min_targets = int(min_targets)
+        max_targets = int(max_targets)
+    except ValueError:
+        return jsonify({'error': 'min_targets and max_targets must be integers'}), 400
+        
+    if min_targets < 1 or max_targets < min_targets:
+        return jsonify({'error': 'Invalid min_targets or max_targets values'}), 400
+        
+    # Import the LoadBalancerService
+    from app.services.loadbalancer import LoadBalancerService
+    lb_service = LoadBalancerService()
+    
+    # Execute auto-scaling
+    result = lb_service.auto_scale_lb_targets(
+        container_prefix=container_prefix,
+        min_targets=min_targets,
+        max_targets=max_targets
+    )
+    
+    return jsonify(result)
+    
+@bp.route('/load-balancers/<int:lb_id>/profiles', methods=['GET'])
+def load_balancer_profiles(lb_id):
+    """List all LXC profiles associated with a load balancer"""
+    session = get_db_session()
+    load_balancer = session.query(LoadBalancer).filter(LoadBalancer.id == lb_id).first()
+    
+    if not load_balancer:
+        return jsonify({'error': 'Load balancer not found'}), 404
+        
+    # Look up the LB config
+    from app.models.lxc_profile import LoadBalancerConfig
+    lb_config = session.query(LoadBalancerConfig).filter(
+        LoadBalancerConfig.name == load_balancer.name
+    ).first()
+    
+    if not lb_config:
+        return jsonify({'error': 'Load balancer configuration not found'}), 404
+        
+    # Get all profiles from LXD
+    try:
+        import pylxd
+        client = pylxd.Client()
+        
+        # Find profiles related to this load balancer
+        lb_profiles = []
+        for profile in client.profiles.all():
+            if profile.name.startswith(f"lb-profile-{load_balancer.name}") or \
+               profile.name.startswith(f"lb-target-"):
+                
+                # Get profile details
+                profile_data = {
+                    'name': profile.name,
+                    'description': profile.description if hasattr(profile, 'description') else '',
+                    'used_by': profile.used_by if hasattr(profile, 'used_by') else [],
+                    'devices': profile.devices if hasattr(profile, 'devices') else {},
+                    'config': profile.config if hasattr(profile, 'config') else {}
+                }
+                
+                # Extract network info from devices
+                if 'eth0' in profile_data['devices']:
+                    eth0 = profile_data['devices']['eth0']
+                    profile_data['network'] = {
+                        'type': eth0.get('type', 'nic'),
+                        'nictype': eth0.get('nictype', 'bridged'),
+                        'parent': eth0.get('parent', lb_config.network_bridge),
+                        'static_ip': eth0.get('ipv4.address', '')
+                    }
+                
+                lb_profiles.append(profile_data)
+        
+        return jsonify(lb_profiles)
+        
+    except Exception as e:
+        logger.error(f"Error getting profiles: {str(e)}")
+        return jsonify({'error': f"Failed to get profiles: {str(e)}"}), 500
