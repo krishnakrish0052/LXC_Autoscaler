@@ -1,0 +1,100 @@
+<!-- templates/load_balancers/create.html -->
+{% extends "base.html" %}
+
+{% block title %}{% if load_balancer %}Edit{% else %}Create{% endif %} Load Balancer - Mizzle Autoscaler{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5>{% if load_balancer %}Edit{% else %}Create{% endif %} Load Balancer</h5>
+    </div>
+    <div class="card-body">
+        <form id="loadBalancerForm">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name</label>
+                <input type="text" class="form-control" id="name" name="name" 
+                       value="{{ load_balancer.name if load_balancer else '' }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="port" class="form-label">Port</label>
+                <input type="number" class="form-control" id="port" name="port" 
+                       min="1" max="65535" value="{{ load_balancer.port if load_balancer else '80' }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="algorithm" class="form-label">Balancing Algorithm</label>
+                <select class="form-select" id="algorithm" name="algorithm" required>
+                    <option value="round_robin" {% if load_balancer and load_balancer.algorithm == 'round_robin' %}selected{% endif %}>Round Robin</option>
+                    <option value="least_connections" {% if load_balancer and load_balancer.algorithm == 'least_connections' %}selected{% endif %}>Least Connections</option>
+                    <option value="ip_hash" {% if load_balancer and load_balancer.algorithm == 'ip_hash' %}selected{% endif %}>IP Hash</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <label for="description" class="form-label">Description</label>
+                <textarea class="form-control" id="description" name="description" rows="3">{{ load_balancer.description if load_balancer else '' }}</textarea>
+            </div>
+            
+            <div class="mb-3">
+                <label for="status" class="form-label">Status</label>
+                <select class="form-select" id="status" name="status">
+                    <option value="inactive" {% if not load_balancer or load_balancer.status == 'inactive' %}selected{% endif %}>Inactive</option>
+                    <option value="active" {% if load_balancer and load_balancer.status == 'active' %}selected{% endif %}>Active</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="{{ url_for('list_load_balancers') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('loadBalancerForm');
+    const isEdit = {% if load_balancer %}true{% else %}false{% endif %};
+    
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = {
+            name: document.getElementById('name').value,
+            port: parseInt(document.getElementById('port').value),
+            algorithm: document.getElementById('algorithm').value,
+            description: document.getElementById('description').value,
+            status: document.getElementById('status').value
+        };
+        
+        try {
+            let url = '/api/load-balancers';
+            let method = 'POST';
+            
+            if (isEdit) {
+                url = `/api/load-balancers/{{ load_balancer.id if load_balancer else '' }}`;
+                method = 'PUT';
+            }
+            
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to save load balancer');
+            }
+            
+            window.location.href = '{{ url_for("list_load_balancers") }}';
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Scaling Rule - Mizzle Autoscaler{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5>Edit Scaling Rule</h5>
+    </div>
+    <div class="card-body">
+         <form id="ruleForm">
+            <div class="mb-3">
+                <label for="container_name" class="form-label">Container</label>
+                <select class="form-select" id="container_name" name="container_name" required>
+                    {% for container in containers %}
+                    <option value="{{ container.name }}" {% if container.name == rule.container_name %}selected{% endif %}>{{ container.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <label for="metric" class="form-label">Metric</label>
+                <select class="form-select" id="metric" name="metric" required>
+                    <option value="cpu" {% if rule.metric == 'cpu' %}selected{% endif %}>CPU Usage</option>
+                    <option value="memory" {% if rule.metric == 'memory' %}selected{% endif %}>Memory Usage</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <label for="threshold" class="form-label">Threshold (%)</label>
+                <input type="number" class="form-control" id="threshold" name="threshold" 
+                       min="1" max="100" value="{{ rule.threshold }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="action_type" class="form-label">Action Type</label>
+                <select class="form-select" id="action_type" name="action_type" required>
+                    <option value="horizontal" {% if rule.action_type == 'horizontal' %}selected{% endif %}>Horizontal Scaling</option>
+                    <option value="vertical" {% if rule.action_type == 'vertical' %}selected{% endif %}>Vertical Scaling</option>
+                </select>
+            </div>
+            
+            <div class="mb-3" id="horizontal-fields" {% if rule.action_type != 'horizontal' %}style="display: none;"{% endif %}>
+                <label for="increment" class="form-label">Number of Containers to Add/Remove</label>
+                <input type="number" class="form-control" id="increment" name="increment" 
+                       min="1" value="{{ rule.increment|default(1) }}">
+            </div>
+            
+            <div class="mb-3" id="vertical-fields" {% if rule.action_type != 'vertical' %}style="display: none;"{% endif %}>
+                <div class="row">
+                    <div class="col">
+                        <label for="cpu_increment" class="form-label">CPU Increment</label>
+                        <input type="text" class="form-control" id="cpu_increment" 
+                               name="cpu_increment" placeholder="e.g., +1" value="{{ rule.cpu_increment }}">
+                    </div>
+                    <div class="col">
+                        <label for="memory_increment" class="form-label">Memory Increment</label>
+                        <input type="text" class="form-control" id="memory_increment" 
+                               name="memory_increment" placeholder="e.g., +1GB" value="{{ rule.memory_increment }}">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label for="cooldown" class="form-label">Cooldown (seconds)</label>
+                <input type="number" class="form-control" id="cooldown" name="cooldown" 
+                       min="60" value="{{ rule.cooldown }}" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Update Rule</button>
+            <a href="{{ url_for('list_rules') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('ruleForm');
+    const actionType = document.getElementById('action_type');
+    const horizontalFields = document.getElementById('horizontal-fields');
+    const verticalFields = document.getElementById('vertical-fields');
+    const submitButton = form.querySelector('button[type="submit"]');
+    let isSubmitted = false;
+
+    // Toggle fields based on action type
+    actionType.addEventListener('change', function() {
+        const isHorizontal = this.value === 'horizontal';
+        horizontalFields.style.display = isHorizontal ? 'block' : 'none';
+        verticalFields.style.display = isHorizontal ? 'none' : 'block';
+    });
+
+    // Form submission
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        if (isSubmitted) return;
+        isSubmitted = true;
+        submitButton.disabled = true;
+        submitButton.innerText = 'Updating...';
+
+        const formData = {
+            container_name: document.getElementById('container_name').value,
+            metric: document.getElementById('metric').value,
+            threshold: parseFloat(document.getElementById('threshold').value),
+            action_type: document.getElementById('action_type').value,
+            cooldown: parseInt(document.getElementById('cooldown').value)
+        };
+
+        if (formData.action_type === 'horizontal') {
+            formData.increment = parseInt(document.getElementById('increment').value);
+        } else {
+            formData.cpu_increment = document.getElementById('cpu_increment').value;
+            formData.memory_increment = document.getElementById('memory_increment').value;
+        }
+
+        try {
+            const response = await fetch('/api/scaling-rules/{{ rule.id }}', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to update rule.');
+            }
+
+            alert('Rule updated successfully!');
+            window.location.href = '{{ url_for("list_rules") }}';
+        } catch (err) {
+            alert(err.message);
+            isSubmitted = false;
+            submitButton.disabled = false;
+            submitButton.innerText = 'Update Rule';
+        }
+    });
+});
+</script>
+{% endblock %}

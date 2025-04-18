@@ -1,0 +1,407 @@
+<!-- templates/load_balancers/detail.html -->
+{% extends "base.html" %}
+
+{% block title %}Load Balancer: {{ load_balancer.name }} - Mizzle Autoscaler{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5>Load Balancer Details</h5>
+                <div>
+                    <a href="{{ url_for('load_balancer_edit', lb_id=load_balancer.id) }}" class="btn btn-sm btn-warning">Edit</a>
+                    <button class="btn btn-sm btn-danger" id="delete-lb">Delete</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Name:</dt>
+                    <dd class="col-sm-8">{{ load_balancer.name }}</dd>
+                    
+                    <dt class="col-sm-4">Port:</dt>
+                    <dd class="col-sm-8">{{ load_balancer.port }}</dd>
+                    
+                    <dt class="col-sm-4">Algorithm:</dt>
+                    <dd class="col-sm-8">{{ load_balancer.algorithm }}</dd>
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge bg-{% if load_balancer.status == 'active' %}success{% elif load_balancer.status == 'inactive' %}warning{% else %}danger{% endif %}">
+                            {{ load_balancer.status }}
+                        </span>
+                    </dd>
+                    
+                    <dt class="col-sm-4">Created:</dt>
+                    <dd class="col-sm-8">{{ load_balancer.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+                    
+                    <dt class="col-sm-4">Description:</dt>
+                    <dd class="col-sm-8">{{ load_balancer.description or '—' }}</dd>
+                </dl>
+                
+                <div class="mt-3">
+                    <button class="btn btn-sm btn-{% if load_balancer.status == 'active' %}danger{% else %}success{% endif %}" id="toggle-status">
+                        {% if load_balancer.status == 'active' %}Deactivate{% else %}Activate{% endif %}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5>Target Containers</h5>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTargetModal">Add Target</button>
+            </div>
+            <div class="card-body">
+                {% if load_balancer.targets %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Container</th>
+                                <th>IP:Port</th>
+                                <th>Weight</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for target in load_balancer.targets %}
+                            <tr>
+                                <td>{{ target.container_name }}</td>
+                                <td>{{ target.ip_address }}:{{ target.port }}</td>
+                                <td>{{ target.weight }}</td>
+                                <td>
+                                    <span class="badge bg-{% if target.active and target.health_status == 'healthy' %}success{% elif target.active %}warning{% else %}danger{% endif %}">
+                                        {% if target.active %}{{ target.health_status }}{% else %}inactive{% endif %}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-sm btn-warning edit-target" 
+                                                data-target-id="{{ target.id }}"
+                                                data-container="{{ target.container_name }}"
+                                                data-ip="{{ target.ip_address }}"
+                                                data-port="{{ target.port }}"
+                                                data-weight="{{ target.weight }}"
+                                                data-active="{{ target.active }}">
+                                            Edit
+                                        </button>
+                                        <button class="btn btn-sm btn-danger delete-target" 
+                                                data-target-id="{{ target.id }}"
+                                                data-container="{{ target.container_name }}">
+                                            Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No targets found. Add containers to this load balancer using the "Add Target" button.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Target Modal -->
+<div class="modal fade" id="addTargetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Target Container</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addTargetForm">
+                    <div class="mb-3">
+                        <label for="container_name" class="form-label">Container</label>
+                        <select class="form-select" id="container_name" name="container_name" required>
+                            <option value="">Select Container</option>
+                            {% for container in containers %}
+                            <option value="{{ container.name }}">{{ container.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="ip_address" class="form-label">IP Address (Optional)</label>
+                        <input type="text" class="form-control" id="ip_address" name="ip_address"
+                               placeholder="Leave blank to auto-detect">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="port" class="form-label">Port</label>
+                        <input type="number" class="form-control" id="port" name="port" 
+                               min="1" max="65535" value="80" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="weight" class="form-label">Weight</label>
+                        <input type="number" class="form-control" id="weight" name="weight" 
+                               min="1" value="1" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-target">Add Target</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Target Modal -->
+<div class="modal fade" id="editTargetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Target</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editTargetForm">
+                    <input type="hidden" id="edit_target_id">
+                    <div class="mb-3">
+                        <label for="edit_container_name" class="form-label">Container</label>
+                        <input type="text" class="form-control" id="edit_container_name" readonly>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_ip_address" class="form-label">IP Address</label>
+                        <input type="text" class="form-control" id="edit_ip_address" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_port" class="form-label">Port</label>
+                        <input type="number" class="form-control" id="edit_port" 
+                               min="1" max="65535" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_weight" class="form-label">Weight</label>
+                        <input type="number" class="form-control" id="edit_weight" 
+                               min="1" required>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="edit_active">
+                        <label class="form-check-label" for="edit_active">Active</label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="update-target">Update</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="delete-message"></p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const addTargetModal = new bootstrap.Modal(document.getElementById('addTargetModal'));
+    const editTargetModal = new bootstrap.Modal(document.getElementById('editTargetModal'));
+    const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    let deleteType = ''; // 'target' or 'lb'
+    let deleteId = null;
+    
+    // Add target
+    document.getElementById('save-target').addEventListener('click', async function() {
+        const formData = {
+            container_name: document.getElementById('container_name').value,
+            port: parseInt(document.getElementById('port').value),
+            weight: parseInt(document.getElementById('weight').value)
+        };
+        
+        const ip = document.getElementById('ip_address').value;
+        if (ip) {
+            formData.ip_address = ip;
+        }
+        
+        try {
+            const response = await fetch(`/api/load-balancers/{{ load_balancer.id }}/targets`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to add target');
+            }
+            
+            addTargetModal.hide();
+            window.location.reload();
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+    
+    // Edit target
+    const editButtons = document.querySelectorAll('.edit-target');
+    editButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const targetId = this.dataset.targetId;
+            const container = this.dataset.container;
+            const ip = this.dataset.ip;
+            const port = this.dataset.port;
+            const weight = this.dataset.weight;
+            const active = this.dataset.active === 'True';
+            
+            document.getElementById('edit_target_id').value = targetId;
+            document.getElementById('edit_container_name').value = container;
+            document.getElementById('edit_ip_address').value = ip;
+            document.getElementById('edit_port').value = port;
+            document.getElementById('edit_weight').value = weight;
+            document.getElementById('edit_active').checked = active;
+            
+            editTargetModal.show();
+        });
+    });
+    
+    // Update target
+    document.getElementById('update-target').addEventListener('click', async function() {
+        const targetId = document.getElementById('edit_target_id').value;
+        const formData = {
+            ip_address: document.getElementById('edit_ip_address').value,
+            port: parseInt(document.getElementById('edit_port').value),
+            weight: parseInt(document.getElementById('edit_weight').value),
+            active: document.getElementById('edit_active').checked
+        };
+        
+        try {
+            const response = await fetch(`/api/load-balancers/{{ load_balancer.id }}/targets/${targetId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to update target');
+            }
+            
+            editTargetModal.hide();
+            window.location.reload();
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+    
+    // Delete target
+    const deleteTargetButtons = document.querySelectorAll('.delete-target');
+    deleteTargetButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const targetId = this.dataset.targetId;
+            const container = this.dataset.container;
+            
+            deleteType = 'target';
+            deleteId = targetId;
+            document.getElementById('delete-message').textContent = `Are you sure you want to remove container "${container}" from this load balancer?`;
+            deleteModal.show();
+        });
+    });
+    
+    // Delete load balancer
+    document.getElementById('delete-lb').addEventListener('click', function() {
+        deleteType = 'lb';
+        document.getElementById('delete-message').textContent = `Are you sure you want to delete load balancer "{{ load_balancer.name }}"?`;
+        deleteModal.show();
+    });
+    
+    // Confirm delete
+    document.getElementById('confirm-delete').addEventListener('click', async function() {
+        try {
+            let url = '';
+            if (deleteType === 'target') {
+                url = `/api/load-balancers/{{ load_balancer.id }}/targets/${deleteId}`;
+            } else {
+                url = `/api/load-balancers/{{ load_balancer.id }}`;
+            }
+            
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to delete');
+            }
+            
+            deleteModal.hide();
+            
+            if (deleteType === 'lb') {
+                window.location.href = '{{ url_for("list_load_balancers") }}';
+            } else {
+                window.location.reload();
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+    
+    // Toggle load balancer status
+    document.getElementById('toggle-status').addEventListener('click', async function() {
+        const newStatus = {{ 'inactive' if load_balancer.status == 'active' else 'active' }};
+        
+        try {
+            const response = await fetch(`/api/load-balancers/{{ load_balancer.id }}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    status: newStatus
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to update status');
+            }
+            
+            window.location.reload();
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+});
+</script>
+{% endblock %}

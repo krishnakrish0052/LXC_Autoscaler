@@ -1,5 +1,6 @@
 import json
 import logging
+from config import Config
 import redis
 from datetime import datetime, timedelta
 from celery import Celery
@@ -40,6 +41,7 @@ class DecisionEngine:
         self.redis = redis.StrictRedis(
             host=redis_host, 
             port=redis_port, 
+            password=Config.REDIS_PASSWORD,  # Add password
             db=0,
             decode_responses=True
         )

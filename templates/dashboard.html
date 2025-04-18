@@ -1,13 +1,286 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Mizzle Autoscaler{% endblock %}
+{% block title %}Dashboard - LXC Autoscaler{% endblock %}
+
+{% block extra_css %}
+<style>
+.metric-card {
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+.metric-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+.metric-value {
+    font-size: 2rem;
+    font-weight: bold;
+}
+.chart-container {
+    height: 250px;
+}
+.instance-status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+.status-running {
+    background-color: #28a745;
+}
+.status-stopped {
+    background-color: #dc3545;
+}
+.status-frozen {
+    background-color: #17a2b8;
+}
+.status-starting {
+    background-color: #ffc107;
+}
+.heatmap-cell {
+    padding: 10px;
+    text-align: center;
+    border-radius: 4px;
+    color: white;
+    font-weight: bold;
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row">
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h2 class="mb-3">System Overview</h2>
+    </div>
+</div>
+
+<!-- System Metrics Cards -->
+<div class="row mb-4">
+    <!-- CPU Usage -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">CPU Usage</h5>
+                <p class="metric-value text-primary">{{ system.cpu.percent|default(0)|round(1) }}%</p>
+                <div class="progress mt-2" style="height: 10px;">
+                    <div class="progress-bar bg-primary" role="progressbar" 
+                         style="width: {{ system.cpu.percent|default(0) }}%" 
+                         aria-valuenow="{{ system.cpu.percent|default(0) }}" 
+                         aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        {{ system.cpu.count|default(0) }} Cores | 
+                        User: {{ system.cpu.times_percent.user|default(0)|round(1) }}% | 
+                        System: {{ system.cpu.times_percent.system|default(0)|round(1) }}%
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Memory Usage -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Memory Usage</h5>
+                <p class="metric-value text-success">{{ system.memory.percent|default(0)|round(1) }}%</p>
+                <div class="progress mt-2" style="height: 10px;">
+                    <div class="progress-bar bg-success" role="progressbar" 
+                         style="width: {{ system.memory.percent|default(0) }}%" 
+                         aria-valuenow="{{ system.memory.percent|default(0) }}" 
+                         aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Used: {{ (system.memory.used|default(0) / 1024 / 1024 / 1024)|round(1) }} GB | 
+                        Total: {{ (system.memory.total|default(0) / 1024 / 1024 / 1024)|round(1) }} GB | 
+                        Swap: {{ system.memory.swap.percent|default(0)|round(1) }}%
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Disk Usage -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Disk Usage</h5>
+                {% set total_disk_space = 0 %}
+                {% set used_disk_space = 0 %}
+                {% for partition in system.disk.partitions|default([]) %}
+                    {% set total_disk_space = total_disk_space + partition.total %}
+                    {% set used_disk_space = used_disk_space + partition.used %}
+                {% endfor %}
+                
+                {% if total_disk_space > 0 %}
+                    {% set disk_percent = (used_disk_space / total_disk_space * 100)|round(1) %}
+                {% else %}
+                    {% set disk_percent = 0 %}
+                {% endif %}
+                
+                <p class="metric-value text-warning">{{ disk_percent }}%</p>
+                <div class="progress mt-2" style="height: 10px;">
+                    <div class="progress-bar bg-warning" role="progressbar" 
+                         style="width: {{ disk_percent }}%" 
+                         aria-valuenow="{{ disk_percent }}" 
+                         aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Used: {{ (used_disk_space / 1024 / 1024 / 1024)|round(1) }} GB | 
+                        Total: {{ (total_disk_space / 1024 / 1024 / 1024)|round(1) }} GB | 
+                        Partitions: {{ system.disk.partitions|default([])|length }}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Network Usage -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Network Activity</h5>
+                
+                {% set total_bytes_sent = 0 %}
+                {% set total_bytes_recv = 0 %}
+                {% for iface, stats in system.network|default({}).items() %}
+                    {% set total_bytes_sent = total_bytes_sent + stats.bytes_sent %}
+                    {% set total_bytes_recv = total_bytes_recv + stats.bytes_recv %}
+                {% endfor %}
+                
+                <p class="metric-value text-info">
+                    {{ system.network|default({})|length }} 
+                    <small>interfaces</small>
+                </p>
+                
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Sent: {{ (total_bytes_sent / 1024 / 1024)|round(2) }} MB | 
+                        Received: {{ (total_bytes_recv / 1024 / 1024)|round(2) }} MB |
+                        Interfaces: {{ system.network|default({})|join(', ') }}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Charts -->
+<div class="row mb-5">
+    <!-- CPU & Memory History Chart -->
     <div class="col-md-6">
         <div class="card">
             <div class="card-header">
-                <h5>Container Status</h5>
+                <h5>CPU & Memory History</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="systemResourceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Network Traffic Chart -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Network Traffic</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="networkTrafficChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instance Metrics -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h2 class="mb-3">Instance Overview</h2>
+    </div>
+</div>
+
+<!-- Instance Status Summary -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Total Instances</h5>
+                <p class="metric-value">{{ instances|length }}</p>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Containers: {{ instances|selectattr('type', 'equalto', 'container')|list|length }} | 
+                        VMs: {{ instances|selectattr('type', 'equalto', 'virtual-machine')|list|length }}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Running</h5>
+                <p class="metric-value text-success">
+                    {{ instances|selectattr('status', 'equalto', 'Running')|list|length }}
+                </p>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Containers: {{ instances|selectattr('type', 'equalto', 'container')|selectattr('status', 'equalto', 'Running')|list|length }} | 
+                        VMs: {{ instances|selectattr('type', 'equalto', 'virtual-machine')|selectattr('status', 'equalto', 'Running')|list|length }}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Stopped</h5>
+                <p class="metric-value text-danger">
+                    {{ instances|selectattr('status', 'equalto', 'Stopped')|list|length }}
+                </p>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Containers: {{ instances|selectattr('type', 'equalto', 'container')|selectattr('status', 'equalto', 'Stopped')|list|length }} | 
+                        VMs: {{ instances|selectattr('type', 'equalto', 'virtual-machine')|selectattr('status', 'equalto', 'Stopped')|list|length }}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Scaling Rules</h5>
+                <p class="metric-value text-primary">{{ rules|length }}</p>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Horizontal: {{ rules|selectattr('action_type', 'equalto', 'horizontal')|list|length }} | 
+                        Vertical: {{ rules|selectattr('action_type', 'equalto', 'vertical')|list|length }}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instance Metrics -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5>Instance Resources</h5>
+                <a href="{{ url_for('list_instances') }}" class="btn btn-sm btn-primary">View All Instances</a>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -15,71 +288,55 @@
                         <thead>
                             <tr>
                                 <th>Name</th>
+                                <th>Type</th>
                                 <th>Status</th>
                                 <th>CPU</th>
                                 <th>Memory</th>
+                                <th>Uptime</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for container in containers %}
+                            {% for instance in instances|sort(attribute='name') %}
                             <tr>
-                                <td>{{ container.name }}</td>
                                 <td>
-                                    <span class="badge bg-{% if container.status == 'Running' %}success{% else %}danger{% endif %}">
-                                        {{ container.status }}
-                                    </span>
+                                    <a href="{{ url_for('instance_detail', name=instance.name) }}">{{ instance.name }}</a>
+                                </td>
+                                <td>
+                                    {% if instance.type == 'virtual-machine' %}
+                                    <span class="badge bg-info">VM</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Container</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="instance-status-dot status-{{ instance.status|lower }}"></span>
+                                    {{ instance.status }}
                                 </td>
                                 <td>
                                     <div class="progress">
                                         <div class="progress-bar" role="progressbar" 
-                                             style="width: {{ container.cpu_usage|default(0) }}%">
-                                            {{ container.cpu_usage|default(0) }}%
+                                             style="width: {{ instance.metrics.cpu.percent|default(0) }}%">
+                                            {{ instance.metrics.cpu.percent|default(0)|round(1) }}%
                                         </div>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="progress">
                                         <div class="progress-bar bg-success" role="progressbar" 
-                                             style="width: {{ container.memory_usage|default(0) }}%">
-                                            {{ container.memory_usage|default(0) }}%
+                                             style="width: {{ instance.metrics.memory.percent|default(0) }}%">
+                                            {{ instance.metrics.memory.percent|default(0)|round(1) }}%
                                         </div>
                                     </div>
                                 </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>Recent Scaling Actions</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Container</th>
-                                <th>Action</th>
-                                <th>Time</th>
-                                <th>Details</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for action in history %}
-                            <tr>
-                                <td>{{ action.container_name }}</td>
                                 <td>
-                                    <span class="badge bg-{% if action.action == 'scale_up' %}info{% else %}warning{% endif %}">
-                                        {{ action.action }}
-                                    </span>
+                                    {% if instance.metrics.uptime is defined %}
+                                        {% set uptime_hours = (instance.metrics.uptime / 3600)|int %}
+                                        {% set uptime_minutes = ((instance.metrics.uptime % 3600) / 60)|int %}
+                                        {{ uptime_hours }}h {{ uptime_minutes }}m
+                                    {% else %}
+                                        -
+                                    {% endif %}
                                 </td>
-                                <td>{{ action.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
-                                <td>{{ action.reason }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -90,14 +347,92 @@
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-12">
+<!-- Resource Heatmap -->
+<div class="row mb-4">
+    <div class="col-md-12">
         <div class="card">
             <div class="card-header">
-                <h5>Resource Usage</h5>
+                <h5>Resource Heatmap</h5>
             </div>
             <div class="card-body">
-                <canvas id="usage-chart" height="100"></canvas>
+                <div id="resource-heatmap">
+                    <!-- Will be filled by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Scaling Actions -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5>Recent Scaling Actions</h5>
+                <a href="{{ url_for('list_rules') }}" class="btn btn-sm btn-primary">Manage Scaling Rules</a>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Instance</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Reason</th>
+                                <th>Time</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for action in history %}
+                            <tr>
+                                <td>{{ action.instance_name }}</td>
+                                <td>
+                                    {% if action.instance_type == 'virtual-machine' %}
+                                    <span class="badge bg-info">VM</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Container</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{% if action.action == 'scale_up' %}info{% elif action.action == 'scale_down' %}warning{% else %}success{% endif %}">
+                                        {{ action.action }}
+                                    </span>
+                                </td>
+                                <td>{{ action.reason }}</td>
+                                <td>{{ action.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info view-details" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#actionDetailsModal"
+                                            data-details="{{ action.parameters }}">
+                                        View
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Action Details Modal -->
+<div class="modal fade" id="actionDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Scaling Action Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="action-details-content"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -108,44 +443,210 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize chart with real data
-    const ctx = document.getElementById('usage-chart').getContext('2d');
-    new Chart(ctx, {
+    // Initialize CPU & Memory chart
+    const sysCtx = document.getElementById('systemResourceChart').getContext('2d');
+    new Chart(sysCtx, {
         type: 'line',
         data: {
             labels: Array.from({length: 24}, (_, i) => `${i}:00`),
             datasets: [
                 {
-                    label: 'Average CPU Usage %',
+                    label: 'CPU Usage %',
                     data: Array.from({length: 24}, (_, i) => {
-                        // This would be replaced with actual historical data
-                        return Math.floor(Math.random() * 30) + 50;
+                        // Synthetic data - would be replaced with actual history
+                        const base = 45 + Math.sin(i / 3) * 20;
+                        return base + Math.random() * 10;
                     }),
                     borderColor: 'rgb(75, 192, 192)',
-                    tension: 0.1
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    tension: 0.3,
+                    fill: true
                 },
                 {
-                    label: 'Average Memory Usage %',
+                    label: 'Memory Usage %',
                     data: Array.from({length: 24}, (_, i) => {
-                        // This would be replaced with actual historical data
-                        return Math.floor(Math.random() * 20) + 40;
+                        // Synthetic data
+                        const base = 60 + Math.cos(i / 6) * 15;
+                        return base + Math.random() * 5;
                     }),
                     borderColor: 'rgb(54, 162, 235)',
-                    tension: 0.1
+                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                    tension: 0.3,
+                    fill: true
                 }
             ]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
-                    max: 100
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Usage %'
+                    }
                 }
             }
         }
     });
-    
+
+    // Initialize Network Traffic chart
+    const netCtx = document.getElementById('networkTrafficChart').getContext('2d');
+    new Chart(netCtx, {
+        type: 'line',
+        data: {
+            labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+            datasets: [
+                {
+                    label: 'Inbound (MB)',
+                    data: Array.from({length: 24}, (_, i) => {
+                        // Synthetic data
+                        const base = 25 + Math.sin(i / 2) * 15;
+                        return base + Math.random() * 8;
+                    }),
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: 'Outbound (MB)',
+                    data: Array.from({length: 24}, (_, i) => {
+                        // Synthetic data
+                        const base = 20 + Math.cos(i / 4) * 10;
+                        return base + Math.random() * 5;
+                    }),
+                    borderColor: 'rgb(153, 102, 255)',
+                    backgroundColor: 'rgba(153, 102, 255, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Traffic (MB)'
+                    }
+                }
+            }
+        }
+    });
+
+    // Handle action details modal
+    const viewDetailsButtons = document.querySelectorAll('.view-details');
+    viewDetailsButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const details = JSON.parse(this.dataset.details || '{}');
+            document.getElementById('action-details-content').textContent = JSON.stringify(details, null, 2);
+        });
+    });
+
+    // Create heatmap visualization
+    createResourceHeatmap();
+
+    // Function to create a resource heatmap
+    function createResourceHeatmap() {
+        // Fetch heatmap data from API
+        fetch('/api/metrics/heatmap')
+            .then(response => response.json())
+            .then(data => {
+                renderHeatmap(data);
+            })
+            .catch(error => {
+                console.error('Error fetching heatmap data:', error);
+                // Generate synthetic data for demo
+                const syntheticData = [];
+                {% for instance in instances|selectattr('status', 'equalto', 'Running') %}
+                syntheticData.push({
+                    name: '{{ instance.name }}',
+                    type: '{{ instance.type }}',
+                    cpu: {{ instance.metrics.cpu.percent|default(0) }} || Math.floor(Math.random() * 80) + 10,
+                    memory: {{ instance.metrics.memory.percent|default(0) }} || Math.floor(Math.random() * 70) + 20,
+                    network: Math.floor(Math.random() * 60) + 10,
+                    disk: Math.floor(Math.random() * 50) + 5
+                });
+                {% endfor %}
+                renderHeatmap(syntheticData);
+            });
+    }
+
+    function renderHeatmap(data) {
+        const heatmapContainer = document.getElementById('resource-heatmap');
+        if (!data || data.length === 0) {
+            heatmapContainer.innerHTML = '<div class="alert alert-info">No running instances to display in heatmap</div>';
+            return;
+        }
+
+        // Create heatmap table
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Instance</th>
+                            <th>Type</th>
+                            <th>CPU</th>
+                            <th>Memory</th>
+                            <th>Network</th>
+                            <th>Disk</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        // Add rows for each instance
+        data.forEach(instance => {
+            html += `<tr>
+                <td>${instance.name}</td>
+                <td>${instance.type === 'virtual-machine' ? 'VM' : 'Container'}</td>
+                <td>${getHeatmapCell(instance.cpu, 'cpu')}</td>
+                <td>${getHeatmapCell(instance.memory, 'memory')}</td>
+                <td>${getHeatmapCell(instance.network, 'network')}</td>
+                <td>${getHeatmapCell(instance.disk, 'disk')}</td>
+            </tr>`;
+        });
+
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        heatmapContainer.innerHTML = html;
+    }
+
+    function getHeatmapCell(value, type) {
+        // Get color based on value
+        let color;
+        if (value < 50) {
+            color = `rgba(40, 167, 69, ${0.3 + value/100})`;  // Green
+        } else if (value < 80) {
+            color = `rgba(255, 193, 7, ${0.3 + value/100})`;  // Yellow
+        } else {
+            color = `rgba(220, 53, 69, ${0.3 + value/100})`;  // Red
+        }
+
+        return `<div class="heatmap-cell" style="background-color: ${color}">${Math.round(value)}%</div>`;
+    }
+
     // Auto-refresh every 30 seconds
     setInterval(() => {
         window.location.reload();

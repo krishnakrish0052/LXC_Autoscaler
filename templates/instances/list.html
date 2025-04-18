@@ -1,0 +1,608 @@
+{% extends "base.html" %}
+
+{% block title %}Instances - LXC Autoscaler{% endblock %}
+
+{% block extra_css %}
+<style>
+.metric-card {
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+.metric-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+.status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+.status-running {
+    background-color: #28a745;
+}
+.status-stopped {
+    background-color: #dc3545;
+}
+.status-frozen {
+    background-color: #17a2b8;
+}
+.status-starting {
+    background-color: #ffc107;
+}
+.instance-card {
+    transition: all 0.3s ease;
+}
+.instance-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+.instance-header {
+    position: relative;
+}
+.instance-actions {
+    position: absolute;
+    right: 1rem;
+    top: 0.75rem;
+}
+.filter-controls {
+    margin-bottom: 1.5rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2>LXC Instances</h2>
+    </div>
+    <div class="col-md-4 text-end">
+        <button class="btn btn-primary" id="createInstance" data-bs-toggle="modal" data-bs-target="#createInstanceModal">
+            <i class="bi bi-plus-circle"></i> Create Instance
+        </button>
+    </div>
+</div>
+
+<!-- Instance Summary Cards -->
+<div class="row mb-4">
+    <!-- Total Instances -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Total Instances</h5>
+                <p class="h2 text-primary">{{ instances|length }}</p>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        Containers: {{ instances|selectattr('type', 'equalto', 'container')|list|length }} | 
+                        VMs: {{ instances|selectattr('type', 'equalto', 'virtual-machine')|list|length }}
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Running Instances -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Running</h5>
+                <p class="h2 text-success">
+                    {{ instances|selectattr('status', 'equalto', 'Running')|list|length }}
+                </p>
+                <div class="progress mt-2" style="height: 5px;">
+                    <div class="progress-bar bg-success" role="progressbar" 
+                         style="width: {{ (instances|selectattr('status', 'equalto', 'Running')|list|length / instances|length * 100)|round(0) }}%"></div>
+                </div>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        {{ (instances|selectattr('status', 'equalto', 'Running')|list|length / instances|length * 100)|round(0) }}% of total
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stopped Instances -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Stopped</h5>
+                <p class="h2 text-danger">
+                    {{ instances|selectattr('status', 'equalto', 'Stopped')|list|length }}
+                </p>
+                <div class="progress mt-2" style="height: 5px;">
+                    <div class="progress-bar bg-danger" role="progressbar" 
+                         style="width: {{ (instances|selectattr('status', 'equalto', 'Stopped')|list|length / instances|length * 100)|round(0) }}%"></div>
+                </div>
+                <p class="card-text mt-2">
+                    <small class="text-muted">
+                        {{ (instances|selectattr('status', 'equalto', 'Stopped')|list|length / instances|length * 100)|round(0) }}% of total
+                    </small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Resource Usage -->
+    <div class="col-md-3">
+        <div class="card metric-card bg-light">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Avg. Resource Usage</h5>
+                
+                {% set total_cpu = 0 %}
+                {% set count_cpu = 0 %}
+                {% set total_memory = 0 %}
+                {% set count_memory = 0 %}
+                
+                {% for instance in instances|selectattr('status', 'equalto', 'Running') %}
+                    {% if instance.metrics.cpu and instance.metrics.cpu.percent is defined %}
+                        {% set total_cpu = total_cpu + instance.metrics.cpu.percent %}
+                        {% set count_cpu = count_cpu + 1 %}
+                    {% endif %}
+                    
+                    {% if instance.metrics.memory and instance.metrics.memory.percent is defined %}
+                        {% set total_memory = total_memory + instance.metrics.memory.percent %}
+                        {% set count_memory = count_memory + 1 %}
+                    {% endif %}
+                {% endfor %}
+                
+                {% set avg_cpu = 0 if count_cpu == 0 else (total_cpu / count_cpu)|round(1) %}
+                {% set avg_memory = 0 if count_memory == 0 else (total_memory / count_memory)|round(1) %}
+                
+                <div class="d-flex justify-content-around">
+                    <div>
+                        <span class="badge bg-primary">CPU</span>
+                        <p class="h3">{{ avg_cpu }}%</p>
+                    </div>
+                    <div>
+                        <span class="badge bg-success">Memory</span>
+                        <p class="h3">{{ avg_memory }}%</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter Controls -->
+<div class="row mb-3 filter-controls">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="input-group">
+                            <span class="input-group-text">Search</span>
+                            <input type="text" class="form-control" id="searchInput" placeholder="Instance name...">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="input-group">
+                            <span class="input-group-text">Type</span>
+                            <select class="form-select" id="typeFilter">
+                                <option value="all">All Types</option>
+                                <option value="container">Containers</option>
+                                <option value="virtual-machine">VMs</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="input-group">
+                            <span class="input-group-text">Status</span>
+                            <select class="form-select" id="statusFilter">
+                                <option value="all">All Statuses</option>
+                                <option value="Running">Running</option>
+                                <option value="Stopped">Stopped</option>
+                                <option value="Frozen">Frozen</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="input-group">
+                            <span class="input-group-text">Sort By</span>
+                            <select class="form-select" id="sortBy">
+                                <option value="name">Name</option>
+                                <option value="cpu">CPU Usage</option>
+                                <option value="memory">Memory Usage</option>
+                                <option value="created">Creation Date</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instances Grid View -->
+<div class="row" id="instances-grid">
+    {% for instance in instances|sort(attribute='name') %}
+    <div class="col-md-4 mb-4 instance-item" 
+         data-name="{{ instance.name }}"
+         data-type="{{ instance.type }}"
+         data-status="{{ instance.status }}"
+         data-cpu="{{ instance.metrics.cpu.percent|default(0) }}"
+         data-memory="{{ instance.metrics.memory.percent|default(0) }}"
+         data-created="{{ instance.created_at.timestamp() }}">
+        <div class="card instance-card h-100">
+            <div class="card-header instance-header bg-light">
+                <span class="status-indicator status-{{ instance.status|lower }}"></span>
+                <strong>{{ instance.name }}</strong>
+                
+                <div class="instance-actions">
+                    <span class="badge bg-{% if instance.type == 'virtual-machine' %}info{% else %}secondary{% endif %}">
+                        {{ instance.type }}
+                    </span>
+                    <div class="dropdown d-inline">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            Actions
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('instance_detail', name=instance.name) }}">View Details</a></li>
+                            {% if instance.status == 'Running' %}
+                            <li><a class="dropdown-item instance-action" href="#" data-action="stop" data-instance="{{ instance.name }}">Stop</a></li>
+                            <li><a class="dropdown-item instance-action" href="#" data-action="restart" data-instance="{{ instance.name }}">Restart</a></li>
+                            {% elif instance.status == 'Stopped' %}
+                            <li><a class="dropdown-item instance-action" href="#" data-action="start" data-instance="{{ instance.name }}">Start</a></li>
+                            {% endif %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger delete-instance" href="#" data-instance="{{ instance.name }}" data-bs-toggle="modal" data-bs-target="#deleteInstanceModal">Delete</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- CPU Usage -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>CPU</span>
+                        <span>{{ instance.metrics.cpu.percent|default(0)|round(1) }}%</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-primary" role="progressbar" 
+                             style="width: {{ instance.metrics.cpu.percent|default(0) }}%"></div>
+                    </div>
+                </div>
+                
+                <!-- Memory Usage -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>Memory</span>
+                        <span>{{ instance.metrics.memory.percent|default(0)|round(1) }}%</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {{ instance.metrics.memory.percent|default(0) }}%"></div>
+                    </div>
+                </div>
+                
+                <!-- Network -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>Network</span>
+                        <span>
+                            {% set interfaces = instance.metrics.network|default({})|length %}
+                            {{ interfaces }} interface{{ 's' if interfaces != 1 }}
+                        </span>
+                    </div>
+                    <div class="small text-muted">
+                        {% for iface, stats in instance.metrics.network|default({}).items() %}
+                            {% if loop.first %}
+                                {{ iface }}: 
+                                {% for addr in stats.addresses|default([]) %}
+                                    {% if addr.family == 'inet' %}
+                                        {{ addr.address }}{% if not loop.last %}, {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        {% else %}
+                            No network interfaces
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <!-- Disk -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>Disk</span>
+                        <span>
+                            {% set devices = instance.metrics.disk|default({})|length %}
+                            {{ devices }} device{{ 's' if devices != 1 }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-white">
+                <div class="row">
+                    <div class="col-7 small text-muted">
+                        Created: {{ instance.created_at.strftime('%Y-%m-%d') }}
+                    </div>
+                    <div class="col-5 text-end">
+                        <a href="{{ url_for('instance_detail', name=instance.name) }}" class="btn btn-sm btn-outline-primary">Details</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Empty Results Message -->
+<div id="no-results-message" class="row mb-4 d-none">
+    <div class="col-md-12">
+        <div class="alert alert-info">
+            No instances match your filter criteria.
+        </div>
+    </div>
+</div>
+
+<!-- Create Instance Modal -->
+<div class="modal fade" id="createInstanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create New Instance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createInstanceForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="instanceName" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="instanceName" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="instanceType" class="form-label">Type</label>
+                            <select class="form-control" id="instanceType" required>
+                                <option value="container">Container</option>
+                                <option value="virtual-machine">Virtual Machine</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="instanceImage" class="form-label">Image</label>
+                            <select class="form-control" id="instanceImage" required>
+                                <option value="ubuntu:20.04">Ubuntu 20.04</option>
+                                <option value="ubuntu:22.04">Ubuntu 22.04</option>
+                                <option value="debian:11">Debian 11</option>
+                                <option value="alpine:latest">Alpine (latest)</option>
+                                <option value="centos:7">CentOS 7</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="instanceProfile" class="form-label">Profile</label>
+                            <select class="form-control" id="instanceProfile" required>
+                                <option value="default">default</option>
+                                <!-- Add other profiles here -->
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="cpuLimit" class="form-label">CPU Limit</label>
+                            <input type="text" class="form-control" id="cpuLimit" placeholder="e.g., 2">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="memoryLimit" class="form-label">Memory Limit</label>
+                            <input type="text" class="form-control" id="memoryLimit" placeholder="e.g., 2GB">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="diskLimit" class="form-label">Disk Limit</label>
+                            <input type="text" class="form-control" id="diskLimit" placeholder="e.g., 10GB">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="startAfterCreation" checked>
+                            <label class="form-check-label" for="startAfterCreation">
+                                Start instance after creation
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="submitCreateInstance">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Instance Modal -->
+<div class="modal fade" id="deleteInstanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete instance <strong id="deleteInstanceName"></strong>?</p>
+                <p class="text-danger">This action cannot be undone!</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteInstance">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Filter functionality
+    const searchInput = document.getElementById('searchInput');
+    const typeFilter = document.getElementById('typeFilter');
+    const statusFilter = document.getElementById('statusFilter');
+    const sortBy = document.getElementById('sortBy');
+    const instanceItems = document.querySelectorAll('.instance-item');
+    const noResultsMessage = document.getElementById('no-results-message');
+    
+    // Apply filters function
+    function applyFilters() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedType = typeFilter.value;
+        const selectedStatus = statusFilter.value;
+        const sortOption = sortBy.value;
+        
+        let visibleCount = 0;
+        
+        // Sort instances
+        const instancesGrid = document.getElementById('instances-grid');
+        const instancesArray = Array.from(instanceItems);
+        
+        instancesArray.sort((a, b) => {
+            if (sortOption === 'name') {
+                return a.dataset.name.localeCompare(b.dataset.name);
+            } else if (sortOption === 'cpu') {
+                return parseFloat(b.dataset.cpu) - parseFloat(a.dataset.cpu);
+            } else if (sortOption === 'memory') {
+                return parseFloat(b.dataset.memory) - parseFloat(a.dataset.memory);
+            } else if (sortOption === 'created') {
+                return parseFloat(b.dataset.created) - parseFloat(a.dataset.created);
+            }
+            return 0;
+        });
+        
+        // Reorder DOM
+        instancesArray.forEach(instance => {
+            instancesGrid.appendChild(instance);
+        });
+        
+        // Filter instances
+        instanceItems.forEach(item => {
+            const name = item.dataset.name.toLowerCase();
+            const type = item.dataset.type;
+            const status = item.dataset.status;
+            
+            const matchesSearch = name.includes(searchTerm);
+            const matchesType = selectedType === 'all' || type === selectedType;
+            const matchesStatus = selectedStatus === 'all' || status === selectedStatus;
+            
+            if (matchesSearch && matchesType && matchesStatus) {
+                item.classList.remove('d-none');
+                visibleCount++;
+            } else {
+                item.classList.add('d-none');
+            }
+        });
+        
+        // Show/hide no results message
+        if (visibleCount === 0) {
+            noResultsMessage.classList.remove('d-none');
+        } else {
+            noResultsMessage.classList.add('d-none');
+        }
+    }
+    
+    // Add event listeners
+    searchInput.addEventListener('input', applyFilters);
+    typeFilter.addEventListener('change', applyFilters);
+    statusFilter.addEventListener('change', applyFilters);
+    sortBy.addEventListener('change', applyFilters);
+    
+    // Instance actions
+    const instanceActions = document.querySelectorAll('.instance-action');
+    instanceActions.forEach(action => {
+        action.addEventListener('click', function(e) {
+            e.preventDefault();
+            const instanceName = this.dataset.instance;
+            const actionType = this.dataset.action;
+            
+            performInstanceAction(instanceName, actionType);
+        });
+    });
+    
+    function performInstanceAction(instanceName, action) {
+        const url = `/api/instances/${instanceName}/${action}`;
+        
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to ${action} instance`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            alert(`Instance ${action} operation successful!`);
+            window.location.reload();
+        })
+        .catch(error => {
+            alert(`Error: ${error.message}`);
+        });
+    }
+    
+    // Delete instance
+    const deleteInstances = document.querySelectorAll('.delete-instance');
+    let instanceToDelete = null;
+    
+    deleteInstances.forEach(button => {
+        button.addEventListener('click', function() {
+            instanceToDelete = this.dataset.instance;
+            document.getElementById('deleteInstanceName').textContent = instanceToDelete;
+        });
+    });
+    
+    document.getElementById('confirmDeleteInstance').addEventListener('click', function() {
+        if (!instanceToDelete) return;
+        
+        performInstanceAction(instanceToDelete, 'delete');
+    });
+    
+    // Create instance
+    document.getElementById('submitCreateInstance').addEventListener('click', function() {
+        const form = document.getElementById('createInstanceForm');
+        
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        const instanceData = {
+            name: document.getElementById('instanceName').value,
+            type: document.getElementById('instanceType').value,
+            image: document.getElementById('instanceImage').value,
+            profile: document.getElementById('instanceProfile').value,
+            cpu_limit: document.getElementById('cpuLimit').value || null,
+            memory_limit: document.getElementById('memoryLimit').value || null,
+            disk_limit: document.getElementById('diskLimit').value || null,
+            start: document.getElementById('startAfterCreation').checked
+        };
+        
+        fetch('/api/instances', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(instanceData)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to create instance');
+            }
+            return response.json();
+        })
+        .then(data => {
+            alert('Instance created successfully!');
+            window.location.reload();
+        })
+        .catch(error => {
+            alert(`Error: ${error.message}`);
+        });
+    });
+});
+</script>
+{% endblock %}

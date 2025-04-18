@@ -15,8 +15,9 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Redis
+    REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', 'none')
     REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-    REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+    REDIS_PORT = 6379
     REDIS_METRICS_TTL = int(os.getenv('REDIS_METRICS_TTL', 300))  # ⬅️ Add this line (TTL in seconds)
 
     
@@ -33,7 +34,7 @@ class Config:
     STATIC_DIR = os.path.join(BASE_DIR, 'static')
     
     # Security
-    SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
+    SECRET_KEY = os.getenv('SECRET_KEY', '72gbdhbhdbjbjkbkkskb')
 
     @classmethod
     def validate_paths(cls):
