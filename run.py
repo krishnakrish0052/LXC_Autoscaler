@@ -45,28 +45,19 @@ def index():
     return render_template('dashboard.html')
 
 def check_redis_connection():
-    """Test Redis connection to ensure it's available and properly configured"""
-    try:
-        # Use our helper to get a properly configured Redis client
-        redis_client = get_redis_connection()
-        
-        # Try to ping Redis server
-        response = redis_client.ping()
-        if response:
-            logger.info("✅ Redis connection successful")
-            return True
-        else:
-            logger.error("❌ Redis ping failed")
-            return False
-    except redis.exceptions.AuthenticationError:
-        logger.error("❌ Redis authentication failed - please check REDIS_PASSWORD in .env")
-        logger.error("   To disable authentication, set REDIS_PASSWORD to an empty string")
-        return False
-    except redis.exceptions.ConnectionError:
-        logger.error(f"❌ Redis connection failed - is Redis running at {Config.REDIS_HOST}:{Config.REDIS_PORT}?")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Redis error: {str(e)}")
+    """Test Redis connection to ensure it's available"""
+    # Get Redis client using our robust connection helper
+    redis_client = get_redis_connection()
+    
+    # Try to ping Redis server
+    response = redis_client.ping()
+    if response:
+        logger.info("✅ Redis connection successful")
+        return True
+    else:
+        # This handles both connection failures and authentication issues
+        logger.warning(f"⚠️ Redis connection issues detected at {Config.REDIS_HOST}:{Config.REDIS_PORT}")
+        logger.warning("Some features will use fallback mode (metrics and scaling may be limited)")
         return False
 
 @app.route('/dashboard')
