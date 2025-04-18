@@ -6,6 +6,26 @@ This script helps you configure and test Redis connection settings.
 It will try different authentication methods and update your .env file
 with the correct settings.
 """
+
+print("""
+┌───────────────────────────────────────────────────────┐
+│ REDIS CONFIGURATION UTILITY                           │
+│                                                       │
+│ This utility will help you configure Redis connection │
+│ settings for the LXC_Autoscaler application.          │
+│                                                       │
+│ • It will try common passwords automatically          │
+│ • If successful, it can update your .env file         │
+│ • You can also specify a custom password               │
+│                                                       │
+│ If you know your Redis password, run:                 │
+│   ./redis_config.py your_password                     │
+│                                                       │
+│ ERROR: WRONGPASS invalid username-password pair       │
+│ This means Redis requires authentication but none of  │
+│ the common passwords worked.                          │
+└───────────────────────────────────────────────────────┘
+""")
 import os
 import redis
 import sys
@@ -74,6 +94,9 @@ def main():
         "default",  # Common default
         "redis",    # Common default
         "password", # Common test password
+        "mizzle",   # Based on database password in .env
+        "redis123", # Common default
+        "admin",    # Common default
     ]
     
     host = 'localhost'

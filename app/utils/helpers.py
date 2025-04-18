@@ -112,3 +112,7 @@ class FallbackPubSub:
     def listen(self):
         # Return an empty generator that never yields anything
         return iter(())
+    
+    def close(self):
+        # No-op close method
+        pass
