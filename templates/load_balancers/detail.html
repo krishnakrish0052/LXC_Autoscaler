@@ -10,7 +10,8 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5>Load Balancer Details</h5>
                 <div>
-                    <a href="{{ url_for('load_balancer_edit', lb_id=load_balancer.id) }}" class="btn btn-sm btn-warning">Edit</a>
+                    <!-- Use the same detail page for edits -->
+                    <button class="btn btn-sm btn-warning" id="edit-lb">Edit</button>
                     <button class="btn btn-sm btn-danger" id="delete-lb">Delete</button>
                 </div>
             </div>

@@ -319,9 +319,38 @@ def list_rules():
 @app.route('/rules/create')
 def create_rule():
     """Create a new scaling rule"""
-    session = get_db_session()
-    instances = session.query(Instance).all()
-    return render_template('rules/create.html', instances=instances)
+    try:
+        session = get_db_session()
+        containers = []
+
+        # Try to get containers from database first
+        db_containers = session.query(Container).all()
+        if db_containers and len(db_containers) > 0:
+            containers = db_containers
+        else:
+            # Fallback to getting containers from LXD directly
+            try:
+                import pylxd
+                client = pylxd.Client()
+                # Get containers from LXD and create basic container objects
+                lxd_containers = client.containers.all()
+                for c in lxd_containers:
+                    containers.append({"name": c.name, "status": c.status})
+            except Exception as e:
+                logger.error(f"Error getting containers from LXD: {str(e)}")
+                
+        # If we still don't have any containers, provide a placeholder
+        if not containers:
+            containers = [{"name": "No containers available", "status": "N/A"}]
+            
+        return render_template('rules/create.html', containers=containers)
+    except Exception as e:
+        logger.error(f"Error preparing rule creation page: {str(e)}")
+        return render_template('fallback_dashboard.html',
+                        system={'cpu_percent': 0, 'memory_percent': 0, 'disk_percent': 0},
+                        redis_ok=True,
+                        containers=[],
+                        error_message=f"Error: {str(e)}")
 
 @app.route('/rules/<int:rule_id>/edit')
 def edit_rule(rule_id):
