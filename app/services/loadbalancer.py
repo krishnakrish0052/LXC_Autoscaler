@@ -343,17 +343,38 @@ class LoadBalancerService:
             The assigned static IP or None if failed
         """
         try:
-            # Get LB config to determine network settings
-            lb_config = self.session.query(LoadBalancerConfig).filter(
-                LoadBalancerConfig.name == load_balancer.name
-            ).first()
+            # Define default network settings if no config exists
+            network_bridge = "lxdbr0"
+            base_ip = "10.0.0.1"  # Base IP for generating new IPs
             
-            if not lb_config:
-                logger.error(f"No config found for load balancer {load_balancer.name}")
-                return None
+            # Try to get LB config to determine network settings
+            try:
+                lb_config = self.session.query(LoadBalancerConfig).filter(
+                    LoadBalancerConfig.name == load_balancer.name
+                ).first()
                 
-            # Generate a static IP in the same subnet as the load balancer
-            static_ip = self._generate_static_ip(lb_config.static_ip)
+                if lb_config:
+                    network_bridge = lb_config.network_bridge
+                    if lb_config.static_ip:
+                        base_ip = lb_config.static_ip
+            except Exception as e:
+                logger.warning(f"Could not query load_balancer_configs table: {str(e)}")
+                logger.info("Using default network settings")
+                
+                # Try to get targets to determine a base IP if available
+                try:
+                    target = self.session.query(LoadBalancerTarget).filter(
+                        LoadBalancerTarget.load_balancer_id == load_balancer.id,
+                        LoadBalancerTarget.active == True
+                    ).first()
+                    
+                    if target and target.ip_address:
+                        base_ip = target.ip_address
+                except Exception:
+                    pass
+                
+            # Generate a static IP in the same subnet as the base IP
+            static_ip = self._generate_static_ip(base_ip)
             if not static_ip:
                 return None
                 
@@ -379,7 +400,7 @@ class LoadBalancerService:
                     "eth0": {
                         "name": "eth0",
                         "nictype": "bridged",
-                        "parent": lb_config.network_bridge,
+                        "parent": network_bridge,
                         "type": "nic",
                         "ipv4.address": static_ip
                     }
@@ -573,17 +594,38 @@ class LoadBalancerService:
             The assigned static IP or None if failed
         """
         try:
-            # Get LB config to determine network settings
-            lb_config = self.session.query(LoadBalancerConfig).filter(
-                LoadBalancerConfig.name == load_balancer.name
-            ).first()
+            # Define default network settings if no config exists
+            network_bridge = "lxdbr0"
+            base_ip = "10.0.0.1"  # Base IP for generating new IPs
             
-            if not lb_config:
-                logger.error(f"No config found for load balancer {load_balancer.name}")
-                return None
+            # Try to get LB config to determine network settings
+            try:
+                lb_config = self.session.query(LoadBalancerConfig).filter(
+                    LoadBalancerConfig.name == load_balancer.name
+                ).first()
                 
-            # Generate a static IP in the same subnet as the load balancer
-            static_ip = self._generate_static_ip(lb_config.static_ip)
+                if lb_config:
+                    network_bridge = lb_config.network_bridge
+                    if lb_config.static_ip:
+                        base_ip = lb_config.static_ip
+            except Exception as e:
+                logger.warning(f"Could not query load_balancer_configs table: {str(e)}")
+                logger.info("Using default network settings for VM")
+                
+                # Try to get targets to determine a base IP if available
+                try:
+                    target = self.session.query(LoadBalancerTarget).filter(
+                        LoadBalancerTarget.load_balancer_id == load_balancer.id,
+                        LoadBalancerTarget.active == True
+                    ).first()
+                    
+                    if target and target.ip_address:
+                        base_ip = target.ip_address
+                except Exception:
+                    pass
+                
+            # Generate a static IP in the same subnet as the base IP
+            static_ip = self._generate_static_ip(base_ip)
             if not static_ip:
                 return None
                 
@@ -609,7 +651,7 @@ class LoadBalancerService:
                     "eth0": {
                         "name": "eth0",
                         "nictype": "bridged",
-                        "parent": lb_config.network_bridge,
+                        "parent": network_bridge,
                         "type": "nic",
                         "ipv4.address": static_ip
                     }

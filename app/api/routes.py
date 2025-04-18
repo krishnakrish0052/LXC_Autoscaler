@@ -656,15 +656,21 @@ def load_balancer_profiles(lb_id):
     
     if not load_balancer:
         return jsonify({'error': 'Load balancer not found'}), 404
-        
-    # Look up the LB config
-    from app.models.lxc_profile import LoadBalancerConfig
-    lb_config = session.query(LoadBalancerConfig).filter(
-        LoadBalancerConfig.name == load_balancer.name
-    ).first()
     
-    if not lb_config:
-        return jsonify({'error': 'Load balancer configuration not found'}), 404
+    network_bridge = "lxdbr0"  # Default bridge
+        
+    # Look up the LB config - gracefully handle missing table
+    try:
+        from app.models.lxc_profile import LoadBalancerConfig
+        lb_config = session.query(LoadBalancerConfig).filter(
+            LoadBalancerConfig.name == load_balancer.name
+        ).first()
+        
+        if lb_config:
+            network_bridge = lb_config.network_bridge
+    except Exception as e:
+        logger.warning(f"Could not query load_balancer_configs table: {str(e)}")
+        # Continue with default values
         
     # Get all profiles from LXD
     try:
@@ -692,7 +698,7 @@ def load_balancer_profiles(lb_id):
                     profile_data['network'] = {
                         'type': eth0.get('type', 'nic'),
                         'nictype': eth0.get('nictype', 'bridged'),
-                        'parent': eth0.get('parent', lb_config.network_bridge),
+                        'parent': eth0.get('parent', network_bridge),
                         'static_ip': eth0.get('ipv4.address', '')
                     }
                 
